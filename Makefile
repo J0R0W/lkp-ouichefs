@@ -4,6 +4,7 @@ ouichefs-objs := fs.o super.o inode.o file.o dir.o
 KERNELDIR = ../../Linux_Vm/linux-6.5.7
 SHARE_DIR = ../../Linux_Vm/share
 KERNELDIR ?= /lib/modules/$(shell uname -r)/build
+CHECK_PATCH=./checkpatch.pl --no-tree
 
 all:
 	make -C $(KERNELDIR) M=$(PWD) modules
@@ -19,5 +20,10 @@ clean:
 
 setup: all
 	make -C mkfs all img
+
+check: 
+	for f in *.c *.h ; do \
+		$(CHECK_PATCH) -f $$f; \
+	done
 
 .PHONY: all clean
