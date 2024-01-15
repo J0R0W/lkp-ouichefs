@@ -288,7 +288,7 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 	/* setup dentry */
 	d_instantiate(dentry, inode);
 
-	add_inode_to_eviction_tracker(NULL, inode, false);
+	eviction_tracker_add_inode(inode, false);
 
 	return 0;
 
@@ -346,7 +346,7 @@ static int ouichefs_unlink(struct inode *dir, struct dentry *dentry)
 	brelse(bh);
 
 	// Remove inode from eviction tracker
-	remove_inode_from_eviction_tracker(NULL, inode);
+	eviction_tracker_remove_inode(inode);
 
 	/* Update inode stats */
 	dir->i_mtime = dir->i_atime = dir->i_ctime = current_time(dir);
