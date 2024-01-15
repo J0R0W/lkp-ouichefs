@@ -163,6 +163,7 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 	/* Check if inodes are available */
 	sb = dir->i_sb;
 	sbi = OUICHEFS_SB(sb);
+	// TODO: check space %
 	if (sbi->nr_free_inodes == 0 || sbi->nr_free_blocks == 0)
 		return ERR_PTR(-ENOSPC);
 
@@ -242,6 +243,7 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 	dblock = (struct ouichefs_dir_block *)bh->b_data;
 
 	/* Check if parent directory is full */
+	// TODO: call eviction_tracker_get_next_inode_for_eviction() to get the next inode to evict
 	if (dblock->files[OUICHEFS_MAX_SUBFILES - 1].inode != 0) {
 		ret = -EMLINK;
 		goto end;
@@ -288,7 +290,7 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 	/* setup dentry */
 	d_instantiate(dentry, inode);
 
-	eviction_tracker_add_inode(inode, false);
+	eviction_tracker_add_inode(inode);
 
 	return 0;
 
