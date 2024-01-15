@@ -9,6 +9,20 @@ struct eviction_tracker_node {
 	struct inode *inode;
 };
 
+static bool compare_nodes(struct rb_node *rb_node1,
+			  const struct rb_node *rb_node2)
+{
+	struct eviction_tracker_node *node1 =
+		rb_entry(rb_node1, struct eviction_tracker_node, rb_node);
+	struct eviction_tracker_node *node2 =
+		rb_entry(rb_node2, struct eviction_tracker_node, rb_node);
+
+	struct eviction_policy *eviction_policy =
+		node1->eviction_tracker->eviction_policy;
+
+	return eviction_policy->compare(node1->inode, node2->inode) < 0;
+}
+
 struct eviction_tracker *
 get_eviction_tracker(struct eviction_policy *eviction_policy)
 {
@@ -42,20 +56,6 @@ void release_eviction_tracker(struct kref *refcount)
 	printk(KERN_INFO "destroyed eviction tracker\n");
 }
 
-static bool compare_eviction_tracker_nodes(struct rb_node *rb_node1,
-					   const struct rb_node *rb_node2)
-{
-	struct eviction_tracker_node *node1 =
-		rb_entry(rb_node1, struct eviction_tracker_node, rb_node);
-	struct eviction_tracker_node *node2 =
-		rb_entry(rb_node2, struct eviction_tracker_node, rb_node);
-
-	struct eviction_policy *eviction_policy =
-		node1->eviction_tracker->eviction_policy;
-
-	return eviction_policy->compare(node1->inode, node2->inode) < 0;
-}
-
 bool add_inode_to_eviction_tracker(struct eviction_tracker *eviction_tracker,
 				   struct inode *inode, bool check_if_exists)
 {
@@ -83,8 +83,7 @@ bool add_inode_to_eviction_tracker(struct eviction_tracker *eviction_tracker,
 
 	new_node->inode = inode;
 
-	rb_add(&new_node->rb_node, &eviction_tracker->root,
-	       compare_eviction_tracker_nodes);
+	rb_add(&new_node->rb_node, &eviction_tracker->root, compare_nodes);
 	new_node->eviction_tracker = eviction_tracker;
 	printk(KERN_INFO "added inode %lu to eviction tracker\n", inode->i_ino);
 
