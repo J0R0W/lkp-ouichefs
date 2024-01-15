@@ -23,6 +23,11 @@ static bool compare_nodes(struct rb_node *rb_node1,
 	return eviction_policy->compare(node1->inode, node2->inode) < 0;
 }
 
+static dev_t get_device_id_from_inode(struct inode *inode)
+{
+	return inode->i_sb->s_dev;
+}
+
 struct eviction_tracker *
 get_eviction_tracker(struct eviction_policy *eviction_policy)
 {

@@ -14,6 +14,7 @@
 
 #include "ouichefs.h"
 #include "bitmap.h"
+#include "eviction_tracker.h"
 
 static const struct inode_operations ouichefs_inode_ops;
 
@@ -287,6 +288,8 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 	/* setup dentry */
 	d_instantiate(dentry, inode);
 
+	add_inode_to_eviction_tracker(NULL, inode, false);
+
 	return 0;
 
 iput:
@@ -341,6 +344,9 @@ static int ouichefs_unlink(struct inode *dir, struct dentry *dentry)
 	memset(&dir_block->files[nr_subs - 1], 0, sizeof(struct ouichefs_file));
 	mark_buffer_dirty(bh);
 	brelse(bh);
+
+	// Remove inode from eviction tracker
+	remove_inode_from_eviction_tracker(NULL, inode);
 
 	/* Update inode stats */
 	dir->i_mtime = dir->i_atime = dir->i_ctime = current_time(dir);
