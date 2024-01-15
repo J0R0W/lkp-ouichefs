@@ -26,6 +26,7 @@ static bool compare_nodes(struct rb_node *rb_node1,
 struct eviction_tracker *
 get_eviction_tracker(struct eviction_policy *eviction_policy)
 {
+	// TODO use better allocator
 	struct eviction_tracker *eviction_tracker =
 		kmalloc(sizeof(struct eviction_tracker), GFP_KERNEL);
 	eviction_tracker->root = RB_ROOT;
@@ -36,6 +37,57 @@ get_eviction_tracker(struct eviction_policy *eviction_policy)
 	// Pass ownership of eviction_tracker to caller
 	kref_get(&eviction_tracker->refcount);
 	return eviction_tracker;
+}
+
+// TODO: Replace by an addition hashmap (inode_id -> eviction_tracker_node)
+static struct eviction_tracker_node *
+get_eviction_tracker_node_by_inode_id(struct eviction_tracker *eviction_tracker,
+				      int inode_id)
+{
+	struct eviction_tracker_node *iter_node, *iter_node2;
+	rbtree_postorder_for_each_entry_safe(iter_node, iter_node2,
+					     &eviction_tracker->root, rb_node) {
+		if (iter_node->inode->i_ino == inode_id) {
+			return iter_node;
+		}
+	}
+
+	return NULL;
+}
+
+void update_inode_in_eviction_tracker(struct eviction_tracker *eviction_tracker,
+				      struct inode *inode)
+{
+	struct eviction_tracker_node *node =
+		get_eviction_tracker_node_by_inode_id(eviction_tracker,
+						      inode->i_ino);
+
+	if (!node) {
+		printk(KERN_INFO "inode %lu not found in eviction tracker\n",
+		       inode->i_ino);
+		return;
+	}
+
+	// For now just remove and re-add the inode to the eviction tracker (should be reasonably efficient when we add hashing)
+	rb_erase(&node->rb_node, &eviction_tracker->root);
+	rb_add(&node->rb_node, &eviction_tracker->root, compare_nodes);
+}
+
+void remove_inode_from_eviction_tracker(
+	struct eviction_tracker *eviction_tracker, struct inode *inode)
+{
+	struct eviction_tracker_node *node =
+		get_eviction_tracker_node_by_inode_id(eviction_tracker,
+						      inode->i_ino);
+
+	if (!node) {
+		printk(KERN_INFO "inode %lu not found in eviction tracker\n",
+		       inode->i_ino);
+		return;
+	}
+
+	rb_erase(&node->rb_node, &eviction_tracker->root);
+	kfree(node);
 }
 
 void release_eviction_tracker(struct kref *refcount)
