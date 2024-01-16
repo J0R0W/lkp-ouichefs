@@ -15,7 +15,6 @@
 
 #include "ouichefs.h"
 #include "bitmap.h"
-#include "eviction_tracker.h"
 
 /*
  * Map the buffer_head passed in argument with the iblock-th block of the file
