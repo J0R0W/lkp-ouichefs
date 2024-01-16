@@ -12,6 +12,16 @@
 #include <linux/fs.h>
 
 #include "ouichefs.h"
+#include "eviction_tracker.h"
+
+static int bytes_compare(struct inode *inode1, struct inode *inode2)
+{
+	return inode1->i_size - inode2->i_size;
+}
+
+struct eviction_policy evict_by_most_bytes = {
+	.compare = bytes_compare,
+};
 
 /*
  * Mount a ouiche_fs partition
