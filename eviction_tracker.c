@@ -1,4 +1,3 @@
-#include <linux/rbtree.h>
 #include <linux/hashtable.h>
 #include <linux/list.h>
 #include "eviction_tracker.h"
@@ -41,7 +40,8 @@ _get_eviction_tracker_from_device_id(dev_t device_id)
 {
 	// TODO: More efficient lookup
 	struct eviction_tracker *eviction_tracker;
-	hash_for_each(registered_devices, device_id, eviction_tracker,
+	int bucket;
+	hash_for_each(registered_devices, bucket, eviction_tracker,
 		      registered_device_hashtable_node) {
 		if (eviction_tracker->device_id == device_id) {
 			return eviction_tracker;
