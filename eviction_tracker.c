@@ -238,3 +238,19 @@ struct inode *eviction_tracker_get_inode_for_eviction(dev_t device_id)
 
 	return max_node->inode;
 }
+//function get all registered devices and return with parameter
+int eviction_tracker_get_registered_devices(dev_t *devices, int max_devices)
+{
+	int i = 0;
+	struct eviction_tracker *eviction_tracker;
+	int bucket;
+	hash_for_each(registered_devices, bucket, eviction_tracker,
+		      registered_device_hashtable_node) {
+		if (i >= max_devices) {
+			return -ENOMEM;
+		}
+		devices[i] = eviction_tracker->device_id;
+		i++;
+	}
+	return i;
+}

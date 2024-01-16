@@ -11,9 +11,43 @@
 #include <linux/kernel.h>
 #include <linux/fs.h>
 #include <linux/buffer_head.h>
+#include <linux/sysfs.h>
+#include <linux/kobject.h>
 
 #include "ouichefs.h"
 #include "eviction_tracker.h"
+
+static ssize_t ouichefs_evict_store(struct kobject *kobj,
+				    struct kobj_attribute *attr,
+				    const char *buf, size_t count)
+{
+	printk(KERN_INFO "evict store called\n");
+	return count;
+}
+
+static ssize_t ouichefs_evict_show(struct kobject *kobj,
+				   struct kobj_attribute *attr, char *buf)
+{
+	// Optionally return information about eviction status
+
+	dev_t devices[10];
+	int count = eviction_tracker_get_registered_devices(devices, 10);
+	printk(KERN_INFO "count: %d\n", count);
+	for (int i = 0; i < count; i++) {
+		struct inode *inode =
+			eviction_tracker_get_inode_for_eviction(devices[i]);
+
+		printk(KERN_INFO "inode: %ld\n", inode->i_ino);
+	}
+
+	return sprintf(buf, "%s\n", "Eviction Trigger Interface");
+}
+
+static struct kobj_attribute ouichefs_evict_attribute =
+	__ATTR(evict, 0664, ouichefs_evict_show, ouichefs_evict_store);
+
+static struct kobject *ouichefs_kobject;
+
 //Todo Vielleicht funktion aus ouichefs.c verwenden
 /*
 * If a partition is mounted add all inodes to the eviction tracker. This function calls itself recursively
@@ -140,6 +174,19 @@ static int __init ouichefs_init(void)
 		goto err_inode;
 	}
 
+	// Create a kobject and add it to the kernel
+	ouichefs_kobject =
+		kobject_create_and_add("ouichefs_kobject", kernel_kobj);
+	if (!ouichefs_kobject) {
+		pr_err("failed to create the ouichefs_kobject\n");
+	}
+
+	int error = sysfs_create_file(ouichefs_kobject,
+				      &ouichefs_evict_attribute.attr);
+	if (error) {
+		pr_err("failed to create the foo file in /sys/kernel/ouichefs_kobject\n");
+	}
+
 	pr_info("module loaded\n");
 	return 0;
 
@@ -158,7 +205,7 @@ static void __exit ouichefs_exit(void)
 		pr_err("unregister_filesystem() failed\n");
 
 	ouichefs_destroy_inode_cache();
-
+	kobject_put(ouichefs_kobject);
 	pr_info("module unloaded\n");
 }
 

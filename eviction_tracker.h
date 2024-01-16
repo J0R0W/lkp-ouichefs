@@ -21,5 +21,7 @@ int eviction_tracker_add_inode(struct inode *inode);
 int eviction_tracker_remove_inode(struct inode *inode);
 
 // Get the next inode to be evicted for the given device
-struct inode *eviction_tracker_get_next_inode_for_eviction(dev_t device_id);
+struct inode *eviction_tracker_get_inode_for_eviction(dev_t device_id);
+
+int eviction_tracker_get_registered_devices(dev_t *devices, int max_devices);
 #endif
