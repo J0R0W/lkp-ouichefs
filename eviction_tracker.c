@@ -68,7 +68,7 @@ _get_eviction_tracker_node_from_inode(struct inode *inode)
 	struct eviction_tracker *eviction_tracker =
 		_get_eviction_tracker_from_device_id(device_id);
 
-	if (!eviction_tracker) {
+	if (IS_ERR(eviction_tracker)) {
 		printk(KERN_INFO "device %d is not registered\n", device_id);
 		return ERR_PTR(-ENODEV);
 	}
@@ -129,7 +129,7 @@ int eviction_tracker_unregister_device(dev_t device_id)
 	struct eviction_tracker *eviction_tracker =
 		_get_eviction_tracker_from_device_id(device_id);
 
-	if (!eviction_tracker) {
+	if (IS_ERR(eviction_tracker)) {
 		printk(KERN_INFO "device %d is not registered\n", device_id);
 		return -ENOENT;
 	}
@@ -164,7 +164,7 @@ int eviction_tracker_remove_inode(struct inode *inode)
 	struct eviction_tracker_node *node =
 		_get_eviction_tracker_node_from_inode(inode);
 
-	if (!node) {
+	if (IS_ERR(node)) {
 		printk(KERN_INFO "inode %lu not found in eviction tracker\n",
 		       inode->i_ino);
 		return -ENOENT;
@@ -180,6 +180,12 @@ int eviction_tracker_add_inode(struct inode *inode)
 {
 	struct eviction_tracker *eviction_tracker =
 		_get_eviction_tracker_from_inode(inode);
+
+	if (IS_ERR(eviction_tracker)) {
+		printk(KERN_INFO "device %d is not registered\n",
+		       _get_device_id_from_inode(inode));
+		return -ENODEV;
+	}
 
 	struct eviction_tracker_node *new_node =
 		kmalloc(sizeof(struct eviction_tracker_node), GFP_KERNEL);
@@ -202,7 +208,7 @@ struct inode *eviction_tracker_get_inode_for_eviction(dev_t device_id)
 	struct eviction_tracker *eviction_tracker =
 		_get_eviction_tracker_from_device_id(device_id);
 
-	if (!eviction_tracker) {
+	if (IS_ERR(eviction_tracker)) {
 		printk(KERN_INFO "device %d is not registered\n", device_id);
 		return ERR_PTR(-ENODEV);
 	}
