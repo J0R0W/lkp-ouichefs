@@ -75,8 +75,8 @@ struct dentry *ouichefs_mount(struct file_system_type *fs_type, int flags,
 		return dentry;
 	}
 	pr_info("'%s' mount success\n", dev_name);
-	int ret_evic = eviction_tracker_register_device(dentry->d_sb->s_dev,
-							&evict_by_most_bytes);
+	int ret_evic = eviction_tracker_register_device(
+		dentry->d_sb->s_dev, &eviction_policy_least_recently_accessed);
 	if (ret_evic) {
 		printk(KERN_INFO
 		       "eviction tracker for device %d could not be registered\n",
