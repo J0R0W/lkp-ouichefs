@@ -33,10 +33,18 @@ struct dentry *ouichefs_mount(struct file_system_type *fs_type, int flags,
 
 	dentry =
 		mount_bdev(fs_type, flags, dev_name, data, ouichefs_fill_super);
-	if (IS_ERR(dentry))
+	if (IS_ERR(dentry)) {
 		pr_err("'%s' mount failure\n", dev_name);
-	else
+	} else {
 		pr_info("'%s' mount success\n", dev_name);
+		int ret_evic = eviction_tracker_register_device(
+			dentry->d_sb->s_dev, &evict_by_most_bytes);
+		if (ret_evic) {
+			printk(KERN_INFO
+			       "eviction tracker for device %d could not be registered\n",
+			       dentry->d_sb->s_dev);
+		}
+	}
 
 	printk(KERN_INFO "dentry name: %s\n", dentry->d_name.name);
 	printk(KERN_INFO "device id: %d\n", dentry->d_sb->s_dev);
@@ -50,8 +58,14 @@ struct dentry *ouichefs_mount(struct file_system_type *fs_type, int flags,
 void ouichefs_kill_sb(struct super_block *sb)
 {
 	kill_block_super(sb);
-
 	pr_info("unmounted disk\n");
+
+	int ret_evic = eviction_tracker_unregister_device(sb->s_dev);
+	if (ret_evic) {
+		printk(KERN_INFO
+		       "eviction tracker for device %d could not be unregistered\n",
+		       sb->s_dev);
+	}
 }
 
 static struct file_system_type ouichefs_file_system_type = {

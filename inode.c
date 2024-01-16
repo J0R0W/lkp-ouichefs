@@ -290,7 +290,13 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 	/* setup dentry */
 	d_instantiate(dentry, inode);
 
-	eviction_tracker_add_inode(inode);
+	// Add inode to eviction tracker
+	int ret_evic = eviction_tracker_add_inode(inode);
+	if (ret_evic) {
+		printk(KERN_INFO
+		       "inode %lu could not be added to eviction tracker\n",
+		       inode->i_ino);
+	}
 
 	return 0;
 
@@ -348,7 +354,12 @@ static int ouichefs_unlink(struct inode *dir, struct dentry *dentry)
 	brelse(bh);
 
 	// Remove inode from eviction tracker
-	eviction_tracker_remove_inode(inode);
+	int ret_evic = eviction_tracker_remove_inode(inode);
+	if (ret_evic) {
+		printk(KERN_INFO
+		       "inode %lu could not be removed from eviction tracker\n",
+		       inode->i_ino);
+	}
 
 	/* Update inode stats */
 	dir->i_mtime = dir->i_atime = dir->i_ctime = current_time(dir);
