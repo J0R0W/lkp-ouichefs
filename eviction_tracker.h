@@ -1,19 +1,18 @@
 #ifndef _EVICTION_TRACKER_H
 #define _EVICTION_TRACKER_H
 
-#include <linux/rbtree.h>
 #include "eviction_policy.h"
 
 // Register a file system device for eviction tracking
 int eviction_tracker_register_device(dev_t device_id,
-				      struct eviction_policy *eviction_policy);
+				     struct eviction_policy *eviction_policy);
 
 // Unregister a file system device for eviction tracking
 int eviction_tracker_unregister_device(dev_t device_id);
 
 // Change the eviction policy for a file system device
 int eviction_tracker_change_policy(dev_t device_id,
-				    struct eviction_policy *eviction_policy);
+				   struct eviction_policy *eviction_policy);
 
 // Add an inode to the eviction tracker
 int eviction_tracker_add_inode(struct inode *inode);
