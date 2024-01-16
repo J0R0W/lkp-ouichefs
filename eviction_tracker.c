@@ -157,9 +157,11 @@ int eviction_tracker_remove_inode(struct inode *inode)
 	struct eviction_tracker *eviction_tracker =
 		_get_eviction_tracker_from_inode(inode);
 
-	printk(KERN_INFO
-	       "eviction_tracker is not unused because we access it here: %p\n",
-	       eviction_tracker);
+	if (IS_ERR(eviction_tracker)) {
+		printk(KERN_INFO "device %d is not registered\n",
+		       _get_device_id_from_inode(inode));
+		return -ENODEV;
+	}
 
 	struct eviction_tracker_node *node =
 		_get_eviction_tracker_node_from_inode(inode);
