@@ -16,13 +16,36 @@
 
 #include "ouichefs.h"
 #include "eviction_tracker.h"
-
+/// @brief Trigger eviction for a device by writing its device id to the evict file
+/// @param kobj
+/// @param attr
+/// @param buf
+/// @param count
+/// @return Number of bytes written
 static ssize_t ouichefs_evict_store(struct kobject *kobj,
 				    struct kobj_attribute *attr,
 				    const char *buf, size_t count)
 {
-	printk(KERN_INFO "evict store called\n");
-	return count;
+	dev_t device_id;
+	int ret;
+
+	ret = kstrtouint(buf, 10, &device_id);
+	if (ret < 0) {
+		printk(KERN_ERR "Invalid input: %s\n", buf);
+		return ret;
+	}
+
+	// Perform the eviction
+	struct inode *evicted_inode =
+		eviction_tracker_get_inode_for_eviction(device_id);
+	if (IS_ERR(evicted_inode)) {
+		printk(KERN_ERR "Eviction failed for device %d\n", device_id);
+		return PTR_ERR(evicted_inode);
+	}
+
+	printk(KERN_INFO "Eviction triggered for device %d\n", device_id);
+
+	return count; // Return the number of bytes written
 }
 
 static ssize_t ouichefs_evict_show(struct kobject *kobj,
@@ -36,8 +59,9 @@ static ssize_t ouichefs_evict_show(struct kobject *kobj,
 	for (int i = 0; i < count; i++) {
 		struct inode *inode =
 			eviction_tracker_get_inode_for_eviction(devices[i]);
-
-		printk(KERN_INFO "inode: %ld\n", inode->i_ino);
+		//print inode and devide id
+		printk(KERN_INFO "device id: %d ", devices[i]);
+		printk(KERN_INFO "inode: %lu\n", inode->i_ino);
 	}
 
 	return sprintf(buf, "%s\n", "Eviction Trigger Interface");
