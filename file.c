@@ -199,8 +199,6 @@ static int ouichefs_open(struct inode *inode, struct file *file)
 	struct timespec64 ts = inode->i_atime;
 	struct tm t;
 	time64_to_tm(ts.tv_sec, 0, &t);
-	printk(KERN_INFO "atime: %ld-%d-%d %d:%d:%d\n", t.tm_year + 1900,
-	       t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
 
 	return generic_file_open(inode, file);
 }
@@ -213,8 +211,6 @@ static int ouichefs_release(struct inode *inode, struct file *file)
 	struct timespec64 ts = inode->i_atime;
 	struct tm t;
 	time64_to_tm(ts.tv_sec, 0, &t);
-	printk(KERN_INFO "atime: %ld-%d-%d %d:%d:%d\n", t.tm_year + 1900,
-	       t.tm_mon + 1, t.tm_mday, t.tm_hour, t.tm_min, t.tm_sec);
 
 	return 0;
 }
