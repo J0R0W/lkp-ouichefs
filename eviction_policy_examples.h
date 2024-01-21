@@ -6,13 +6,13 @@
 static int compare_timespec(struct timespec64 *timespec1,
 			    struct timespec64 *timespec2)
 {
-	if (timespec1->tv_sec < timespec2->tv_sec)
+	if (timespec1->tv_sec > timespec2->tv_sec)
 		return -1;
-	else if (timespec1->tv_sec > timespec2->tv_sec)
+	else if (timespec1->tv_sec < timespec2->tv_sec)
 		return 1;
-	else if (timespec1->tv_nsec < timespec2->tv_nsec)
-		return -1;
 	else if (timespec1->tv_nsec > timespec2->tv_nsec)
+		return -1;
+	else if (timespec1->tv_nsec < timespec2->tv_nsec)
 		return 1;
 	else
 		return 0;
