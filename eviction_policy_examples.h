@@ -48,4 +48,18 @@ struct eviction_policy eviction_policy_least_recently_created = {
 	.compare = compare_least_recently_created,
 };
 
+static int compare_largest_file(struct inode *inode1, struct inode *inode2)
+{
+	if (inode1->i_size > inode2->i_size)
+		return 1;
+	else if (inode1->i_size < inode2->i_size)
+		return -1;
+	else
+		return 0;
+}
+
+struct eviction_policy eviction_policy_largest_file = {
+	.compare = compare_largest_file,
+};
+
 #endif
