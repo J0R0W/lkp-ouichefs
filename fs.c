@@ -199,16 +199,15 @@ static int __init ouichefs_init(void)
 	}
 
 	// Create a kobject and add it to the kernel
-	ouichefs_kobject =
-		kobject_create_and_add("ouichefs_kobject", kernel_kobj);
+	ouichefs_kobject = kobject_create_and_add("ouichefs", kernel_kobj);
 	if (!ouichefs_kobject) {
-		pr_err("failed to create the ouichefs_kobject\n");
+		pr_err("failed to create the ouichefs\n");
 	}
 
 	int error = sysfs_create_file(ouichefs_kobject,
 				      &ouichefs_evict_attribute.attr);
 	if (error) {
-		pr_err("failed to create the foo file in /sys/kernel/ouichefs_kobject\n");
+		pr_err("failed to create the foo file in /sys/kernel/ouichefs\n");
 	}
 
 	pr_info("module loaded\n");
