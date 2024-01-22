@@ -4,7 +4,8 @@
 #include "eviction_tracker.h"
 #include "eviction_policy_examples.h"
 
-static struct eviction_policy *eviction_policy;
+static struct eviction_policy *eviction_policy =
+	&eviction_policy_least_recently_accessed;
 static DEFINE_MUTEX(eviction_tracker_policy_mutex);
 
 static struct inode *
