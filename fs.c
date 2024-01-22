@@ -78,6 +78,7 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 	if (IS_ERR(inode)) {
 		printk(KERN_ERR "Eviction failed for device %d and folder %s\n",
 		       path.dentry->d_sb->s_dev, path.dentry->d_name.name);
+		path_put(&path);
 		return PTR_ERR(inode);
 	}
 
@@ -86,7 +87,7 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 	if (IS_ERR(dentry)) {
 		printk(KERN_ERR "Eviction failed for device %d and folder %s\n",
 		       path.dentry->d_sb->s_dev, path.dentry->d_name.name);
-
+		path_put(&path);
 		return PTR_ERR(dentry);
 	}
 
@@ -97,9 +98,12 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 	if (ret < 0) {
 		printk(KERN_ERR "Eviction failed for device %d and folder %s\n",
 		       path.dentry->d_sb->s_dev, path.dentry->d_name.name);
+		dput(dentry);
+		path_put(&path);
 		return ret;
 	}
 
+	dput(dentry);
 	path_put(&path);
 	return count;
 }
