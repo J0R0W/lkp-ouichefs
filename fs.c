@@ -39,7 +39,7 @@ static int set_eviction_percentage_threshold(const char *val,
 	if (eviction_percentage_threshold < 0 ||
 	    eviction_percentage_threshold >= 100) {
 		printk(KERN_ERR
-		       "Invalid eviction_percentage_threshold: %d\n - must be >= 0 and < 100",
+		       "Invalid eviction_percentage_threshold: %d - must be >= 0 and < 100\n",
 		       eviction_percentage_threshold);
 		return -EINVAL;
 	}
@@ -76,7 +76,7 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 		d_inode(path.dentry), recurse);
 
 	if (IS_ERR(inode)) {
-		printk(KERN_ERR "Eviction failed for device %d\n and folder %s",
+		printk(KERN_ERR "Eviction failed for device %d and folder %s\n",
 		       path.dentry->d_sb->s_dev, path.dentry->d_name.name);
 		return PTR_ERR(inode);
 	}
@@ -84,7 +84,7 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 	struct dentry *dentry = d_find_any_alias(inode);
 
 	if (IS_ERR(dentry)) {
-		printk(KERN_ERR "Eviction failed for device %d\n and folder %s",
+		printk(KERN_ERR "Eviction failed for device %d and folder %s\n",
 		       path.dentry->d_sb->s_dev, path.dentry->d_name.name);
 
 		return PTR_ERR(dentry);
@@ -95,7 +95,7 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 			 NULL);
 
 	if (ret < 0) {
-		printk(KERN_ERR "Eviction failed for device %d\n and folder %s",
+		printk(KERN_ERR "Eviction failed for device %d and folder %s\n",
 		       path.dentry->d_sb->s_dev, path.dentry->d_name.name);
 		return ret;
 	}
