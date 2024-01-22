@@ -46,7 +46,8 @@ static int ouichefs_file_get_block(struct inode *inode, sector_t iblock,
 	 * allocate it. Else, get the physical block number.
 	 */
 	if (index->blocks[iblock] == 0) {
-		if (!create) {
+		if (!create)
+		{
 			ret = 0;
 			goto brelse_index;
 		}
