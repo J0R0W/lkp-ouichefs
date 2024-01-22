@@ -14,9 +14,49 @@
 #include <linux/sysfs.h>
 #include <linux/kobject.h>
 #include <linux/namei.h>
+#include <linux/moduleparam.h>
 
 #include "ouichefs.h"
 #include "eviction_tracker.h"
+
+// Parameter how many blocks can be free before eviction is triggered (in %)
+int eviction_percentage_threshold = 10;
+MODULE_PARM_DESC(
+	eviction_percentage_threshold,
+	"Parameter how many blocks can be free before eviction is triggered (in %%) (Default: 10)");
+
+static int set_eviction_percentage_threshold(const char *val,
+					     const struct kernel_param *kp)
+{
+	printk(KERN_INFO
+	       "Setting eviction_percentage_threshold to %s (currently: %d)\n",
+	       val, eviction_percentage_threshold);
+	int ret = param_set_int(val, kp);
+
+	if (ret < 0)
+		return ret;
+
+	if (eviction_percentage_threshold < 0 ||
+	    eviction_percentage_threshold >= 100) {
+		printk(KERN_ERR
+		       "Invalid eviction_percentage_threshold: %d\n - must be >= 0 and < 100",
+		       eviction_percentage_threshold);
+		return -EINVAL;
+	}
+
+	printk(KERN_INFO "eviction_percentage_threshold set to %d\n",
+	       eviction_percentage_threshold);
+	return 0;
+}
+
+static const struct kernel_param_ops eviction_percentage_threshold_ops = {
+	.get = param_get_int,
+	.set = set_eviction_percentage_threshold,
+};
+
+module_param_cb(eviction_percentage_threshold,
+		&eviction_percentage_threshold_ops,
+		&eviction_percentage_threshold, 0664);
 
 static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 					    struct kobj_attribute *attr,
@@ -88,7 +128,7 @@ static struct kobj_attribute ouichefs_evict_recursive_attribute =
 	__ATTR(evict_recursive, 0664, NULL, ouichefs_evict_recursive_store);
 
 static struct kobj_attribute ouichefs_evict_attribute =
-	__ATTR(evict_recursive, 0664, NULL, ouichefs_evict_store);
+	__ATTR(evict, 0664, NULL, ouichefs_evict_store);
 
 static struct kobject *ouichefs_kobject;
 
@@ -157,6 +197,7 @@ static int __init ouichefs_init(void)
 
 	// Create a kobject and add it to the kernel
 	ouichefs_kobject = kobject_create_and_add("ouichefs", kernel_kobj);
+
 	if (!ouichefs_kobject) {
 		pr_err("failed to create the ouichefs\n");
 	}

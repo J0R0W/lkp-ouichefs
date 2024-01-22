@@ -20,6 +20,8 @@ static const struct inode_operations ouichefs_inode_ops;
 
 static int ouichefs_unlink(struct inode *dir, struct dentry *dentry);
 
+extern int eviction_percentage_threshold;
+
 /*
  * Get inode ino from disk.
  */
@@ -165,7 +167,49 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 	/* Check if inodes are available */
 	sb = dir->i_sb;
 	sbi = OUICHEFS_SB(sb);
-	// TODO: check space %
+
+	while ((sbi->nr_free_blocks * 100) / sbi->nr_blocks <
+	       eviction_percentage_threshold) {
+		struct inode *inode_for_eviction =
+			eviction_tracker_get_inode_for_eviction(dir, true);
+		if (IS_ERR(inode_for_eviction)) {
+			return ERR_PTR(PTR_ERR(inode_for_eviction));
+		}
+
+		struct dentry *dentry_for_eviction =
+			d_find_any_alias(inode_for_eviction);
+
+		if (IS_ERR(dentry_for_eviction)) {
+			printk(KERN_ERR
+			       "something went wrong (File: %s Line: %d\n",
+			       __FILE__, __LINE__);
+			dput(dentry_for_eviction);
+			return ERR_PTR(PTR_ERR(dentry_for_eviction));
+		}
+
+		struct dentry *parent = dget_parent(dentry_for_eviction);
+
+		if (IS_ERR(parent)) {
+			printk(KERN_ERR "parent of %s not found\n",
+			       dentry_for_eviction->d_name.name);
+			dput(dentry_for_eviction);
+			dput(parent);
+			return ERR_PTR(PTR_ERR(parent));
+		}
+
+		ret = vfs_unlink(&nop_mnt_idmap, d_inode(parent),
+				 dentry_for_eviction, NULL);
+
+		dput(dentry_for_eviction);
+		dput(parent);
+
+		if (ret < 0) {
+			printk(KERN_ERR "unlink of file %s failed\n",
+			       dentry_for_eviction->d_name.name);
+			return ERR_PTR(ret);
+		}
+	}
+
 	if (sbi->nr_free_inodes == 0 || sbi->nr_free_blocks == 0)
 		return ERR_PTR(-ENOSPC);
 
@@ -181,15 +225,7 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 	ci = OUICHEFS_INODE(inode);
 
 	/* Get a free block for this new inode's index */
-	int max_retries = 5;
-	bno = 0;
-	for (size_t i = 0; i < max_retries && !bno; i++) {
-		bno = get_free_block(sbi);
-		if (!bno) {
-			ret = -ENOSPC;
-			goto put_inode;
-		}
-	}
+	bno = get_free_block(sbi);
 
 	if (!bno) {
 		ret = -ENOSPC;
