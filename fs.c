@@ -13,62 +13,82 @@
 #include <linux/buffer_head.h>
 #include <linux/sysfs.h>
 #include <linux/kobject.h>
+#include <linux/namei.h>
 
 #include "ouichefs.h"
 #include "eviction_tracker.h"
+
+static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
+					    struct kobj_attribute *attr,
+					    const char *buf, size_t count,
+					    bool recurse)
+{
+	struct path path;
+	int ret = kern_path(buf, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &path);
+
+	if (ret < 0) {
+		printk(KERN_ERR "Invalid input: %s\n", buf);
+		return ret;
+	}
+
+	// Get inode for eviction
+	struct inode *inode = eviction_tracker_get_inode_for_eviction(
+		d_inode(path.dentry), recurse);
+
+	if (IS_ERR(inode)) {
+		printk(KERN_ERR "Eviction failed for device %d\n and folder %s",
+		       path.dentry->d_sb->s_dev, path.dentry->d_name.name);
+		return PTR_ERR(inode);
+	}
+
+	struct dentry *dentry = d_find_any_alias(inode);
+
+	if (IS_ERR(dentry)) {
+		printk(KERN_ERR "Eviction failed for device %d\n and folder %s",
+		       path.dentry->d_sb->s_dev, path.dentry->d_name.name);
+
+		return PTR_ERR(dentry);
+	}
+
+	// Trigger eviction for the target folder
+	ret = vfs_unlink(&nop_mnt_idmap, dentry->d_parent->d_inode, dentry,
+			 NULL);
+
+	if (ret < 0) {
+		printk(KERN_ERR "Eviction failed for device %d\n and folder %s",
+		       path.dentry->d_sb->s_dev, path.dentry->d_name.name);
+		return ret;
+	}
+
+	path_put(&path);
+	return count;
+}
+
 /// @brief Trigger eviction for a device by writing its device id to the evict file
 /// @param kobj
 /// @param attr
 /// @param buf
 /// @param count
 /// @return Number of bytes written
+static ssize_t ouichefs_evict_recursive_store(struct kobject *kobj,
+					      struct kobj_attribute *attr,
+					      const char *buf, size_t count)
+{
+	return ouichefs_evict_store_general(kobj, attr, buf, count, true);
+}
+
 static ssize_t ouichefs_evict_store(struct kobject *kobj,
 				    struct kobj_attribute *attr,
 				    const char *buf, size_t count)
 {
-	dev_t device_id;
-	int ret;
-
-	ret = kstrtouint(buf, 10, &device_id);
-	if (ret < 0) {
-		printk(KERN_ERR "Invalid input: %s\n", buf);
-		return ret;
-	}
-
-	// Perform the eviction
-	struct inode *evicted_inode =
-		eviction_tracker_get_inode_for_eviction(device_id);
-	if (IS_ERR(evicted_inode)) {
-		printk(KERN_ERR "Eviction failed for device %d\n", device_id);
-		return PTR_ERR(evicted_inode);
-	}
-
-	printk(KERN_INFO "Eviction triggered for device %d\n", device_id);
-
-	return count; // Return the number of bytes written
+	return ouichefs_evict_store_general(kobj, attr, buf, count, false);
 }
 
-static ssize_t ouichefs_evict_show(struct kobject *kobj,
-				   struct kobj_attribute *attr, char *buf)
-{
-	// Optionally return information about eviction status
-
-	dev_t devices[10];
-	int count = eviction_tracker_get_registered_devices(devices, 10);
-	printk(KERN_INFO "count: %d\n", count);
-	for (int i = 0; i < count; i++) {
-		struct inode *inode =
-			eviction_tracker_get_inode_for_eviction(devices[i]);
-		//print inode and devide id
-		printk(KERN_INFO "device id: %d ", devices[i]);
-		printk(KERN_INFO "inode: %lu\n", inode->i_ino);
-	}
-
-	return sprintf(buf, "%s\n", "Eviction Trigger Interface");
-}
+static struct kobj_attribute ouichefs_evict_recursive_attribute =
+	__ATTR(evict_recursive, 0664, NULL, ouichefs_evict_recursive_store);
 
 static struct kobj_attribute ouichefs_evict_attribute =
-	__ATTR(evict, 0664, ouichefs_evict_show, ouichefs_evict_store);
+	__ATTR(evict_recursive, 0664, NULL, ouichefs_evict_store);
 
 static struct kobject *ouichefs_kobject;
 
@@ -142,9 +162,16 @@ static int __init ouichefs_init(void)
 	}
 
 	int error = sysfs_create_file(ouichefs_kobject,
-				      &ouichefs_evict_attribute.attr);
+				      &ouichefs_evict_recursive_attribute.attr);
 	if (error) {
-		pr_err("failed to create the foo file in /sys/kernel/ouichefs\n");
+		pr_err("failed to create the recursive file in /sys/kernel/ouichefs\n");
+	}
+
+	error = sysfs_create_file(ouichefs_kobject,
+				  &ouichefs_evict_attribute.attr);
+
+	if (error) {
+		pr_err("failed to create the non-recursive file in /sys/kernel/ouichefs\n");
 	}
 
 	pr_info("module loaded\n");
