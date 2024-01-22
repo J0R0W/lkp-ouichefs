@@ -182,6 +182,7 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 
 	/* Get a free block for this new inode's index */
 	int max_retries = 5;
+	bno = 0;
 	for (size_t i = 0; i < max_retries && !bno; i++) {
 		bno = get_free_block(sbi);
 		if (!bno) {
