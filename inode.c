@@ -257,8 +257,7 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 
 	/* Check if parent directory is full */
 	// TODO: call eviction_tracker_get_next_inode_for_eviction() to get the next inode to evict
-	if (dblock->files[OUICHEFS_MAX_SUBFILES - 1].inode != 0 ||
-	    strcmp(dentry->d_name.name, "delete_file") == 0) {
+	if (dblock->files[OUICHEFS_MAX_SUBFILES - 1].inode != 0) {
 		printk(KERN_INFO "dentry parent address: %p\n",
 		       dentry->d_parent);
 		printk(KERN_INFO "dentry parent name: %s\n",
