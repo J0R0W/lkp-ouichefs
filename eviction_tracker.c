@@ -1,256 +1,89 @@
-#include <linux/hashtable.h>
-#include <linux/list.h>
+#include <linux/buffer_head.h>
+
+#include "ouichefs.h"
 #include "eviction_tracker.h"
+#include "eviction_policy_examples.h"
 
-// TODO: MUTEX LOCKING!!!
+static struct eviction_policy *eviction_policy;
+static DEFINE_MUTEX(eviction_tracker_policy_mutex);
 
-struct eviction_tracker {
-	// ID of the device that this eviction_tracker tracks
-	dev_t device_id;
-	// Eviction policy that is used to order the inodes
-	struct eviction_policy *eviction_policy;
-	// Head of the list that contains all inodes
-	struct list_head inode_list;
-	// Hashmap that maps device IDs to eviction trackers
-	// so with a given device_id we can find the eviction tracker that tracks that device (or if the device is being tracked at all)
-	// The key is device_id
-	struct hlist_node registered_device_hashtable_node;
-	// Lock that protects the eviction tracker
-	struct mutex inode_list_lock;
-};
-
-struct eviction_tracker_node {
-	// Inode that is tracked by this node
-	struct inode *inode;
-	// Node that is used to order the inodes
-	struct list_head inode_list_head;
-};
-
-static DEFINE_MUTEX(registered_devices_lock);
-// Allows efficient operations for up to 256 registered devices
-DEFINE_READ_MOSTLY_HASHTABLE(registered_devices, 8);
-
-static dev_t _get_device_id_from_inode(struct inode *inode)
+static struct inode *
+_get_best_file_for_deletion(struct inode *dir, bool recurse,
+			    struct eviction_policy *eviction_policy,
+			    struct inode *best_candidate)
 {
-	return inode->i_sb->s_dev;
-}
+	struct super_block *sb = dir->i_sb;
+	struct ouichefs_inode_info *ci_dir = OUICHEFS_INODE(dir);
+	struct buffer_head *bh = NULL;
+	struct ouichefs_dir_block *dblock = NULL;
+	struct ouichefs_file *f = NULL;
+	int i;
 
-static struct eviction_tracker *
-_get_eviction_tracker_from_device_id(dev_t device_id)
-{
-	// TODO: More efficient lookup
-	struct eviction_tracker *eviction_tracker;
-	int bucket;
-	hash_for_each(registered_devices, bucket, eviction_tracker,
-		      registered_device_hashtable_node) {
-		if (eviction_tracker->device_id == device_id) {
-			return eviction_tracker;
+	/* Read the directory index block on disk */
+	bh = sb_bread(sb, ci_dir->index_block);
+	if (!bh)
+		return ERR_PTR(-EIO);
+	dblock = (struct ouichefs_dir_block *)bh->b_data;
+
+	/* Search for the file in directory */
+	for (i = 0; i < OUICHEFS_MAX_SUBFILES; i++) {
+		f = &dblock->files[i];
+		if (!f->inode) {
+			break;
 		}
-	}
 
-	printk(KERN_INFO "device %d is not registered\n", device_id);
-	return ERR_PTR(-ENODEV);
-}
-
-static struct eviction_tracker *
-_get_eviction_tracker_from_inode(struct inode *inode)
-{
-	dev_t device_id = _get_device_id_from_inode(inode);
-
-	return _get_eviction_tracker_from_device_id(device_id);
-}
-
-static struct eviction_tracker_node *
-_get_eviction_tracker_node_from_inode(struct inode *inode)
-{
-	dev_t device_id = _get_device_id_from_inode(inode);
-
-	struct eviction_tracker *eviction_tracker =
-		_get_eviction_tracker_from_device_id(device_id);
-
-	if (IS_ERR(eviction_tracker)) {
-		printk(KERN_INFO "device %d is not registered\n", device_id);
-		return ERR_PTR(-ENODEV);
-	}
-
-	struct eviction_tracker_node *iter_node;
-	list_for_each_entry(iter_node, &eviction_tracker->inode_list,
-			    inode_list_head) {
-		if (iter_node->inode->i_ino == inode->i_ino) {
-			return iter_node;
+		struct inode *inode = ouichefs_iget(sb, f->inode);
+		if (inode == NULL) {
+			brelse(bh);
+			return best_candidate;
 		}
-	}
 
-	printk(KERN_INFO "inode %lu not found in eviction tracker\n",
-	       inode->i_ino);
-	return ERR_PTR(-ENOENT);
-}
-
-int eviction_tracker_register_device(dev_t device_id,
-				     struct eviction_policy *eviction_policy)
-{
-	// TODO: Check if device is already registered (then device_id is already a key in the hashtable)
-	// then print error and return
-	int bucket;
-	struct eviction_tracker *eviction_tracker;
-	hash_for_each(registered_devices, bucket, eviction_tracker,
-		      registered_device_hashtable_node) {
-		if (eviction_tracker->device_id == device_id) {
-			printk(KERN_INFO "device %d is already registered\n",
-			       device_id);
-			return -EEXIST;
+		if (recurse && S_ISDIR(inode->i_mode)) {
+			best_candidate = _get_best_file_for_deletion(
+				inode, recurse, eviction_policy,
+				best_candidate);
+		} else if (S_ISREG(inode->i_mode)) {
+			if (best_candidate == NULL ||
+			    eviction_policy->compare(inode, best_candidate) >
+				    0) {
+				best_candidate = inode;
+			}
+		} else {
+			printk(KERN_INFO "inode %s is unknown\n", f->filename);
 		}
+		iput(inode);
 	}
 
-	// TODO: Use slab allocator
-	struct eviction_tracker *new_tracker =
-		kmalloc(sizeof(struct eviction_tracker), GFP_KERNEL);
-
-	if (!new_tracker) {
-		printk(KERN_INFO "failed to allocate memory for new tracker\n");
-		return -ENOMEM;
-	}
-
-	// Initialize eviction_tracker
-	new_tracker->device_id = device_id;
-	new_tracker->eviction_policy = eviction_policy;
-	INIT_HLIST_NODE(&new_tracker->registered_device_hashtable_node);
-	INIT_LIST_HEAD(&new_tracker->inode_list);
-	mutex_init(&new_tracker->inode_list_lock);
-
-	hash_add(registered_devices,
-		 &new_tracker->registered_device_hashtable_node, device_id);
-
-	return 0;
+	brelse(bh);
+	return best_candidate;
 }
 
-int eviction_tracker_unregister_device(dev_t device_id)
+struct inode *eviction_tracker_get_inode_for_eviction(struct inode *dir,
+						      bool recurse)
 {
-	struct eviction_tracker *eviction_tracker =
-		_get_eviction_tracker_from_device_id(device_id);
+	mutex_lock(&eviction_tracker_policy_mutex);
+	struct inode *best_candidate = _get_best_file_for_deletion(
+		dir, recurse, eviction_policy, NULL);
 
-	if (IS_ERR(eviction_tracker)) {
-		printk(KERN_INFO "device %d is not registered\n", device_id);
-		return -ENOENT;
-	}
-
-	//TODO: Remove device from hashtable and free the eviction_tracker
-	hash_del(&eviction_tracker->registered_device_hashtable_node);
-
-	// Clear inode list
-	struct eviction_tracker_node *iter_node, *iter_node2;
-
-	list_for_each_entry_safe(iter_node, iter_node2,
-				 &eviction_tracker->inode_list,
-				 inode_list_head) {
-		list_del(&iter_node->inode_list_head);
-		kfree(iter_node);
-	}
-
-	kfree(eviction_tracker);
-
-	return 0;
-}
-
-int eviction_tracker_remove_inode(struct inode *inode)
-{
-	struct eviction_tracker *eviction_tracker =
-		_get_eviction_tracker_from_inode(inode);
-
-	if (IS_ERR(eviction_tracker)) {
-		printk(KERN_INFO "device %d is not registered\n",
-		       _get_device_id_from_inode(inode));
-		return -ENODEV;
-	}
-
-	struct eviction_tracker_node *node =
-		_get_eviction_tracker_node_from_inode(inode);
-
-	if (IS_ERR(node)) {
-		printk(KERN_INFO "inode %lu not found in eviction tracker\n",
-		       inode->i_ino);
-		return -ENOENT;
-	}
-
-	list_del(&node->inode_list_head);
-	kfree(node);
-
-	return 0;
-}
-
-int eviction_tracker_add_inode(struct inode *inode)
-{
-	struct eviction_tracker *eviction_tracker =
-		_get_eviction_tracker_from_inode(inode);
-
-	if (IS_ERR(eviction_tracker)) {
-		printk(KERN_INFO "device %d is not registered\n",
-		       _get_device_id_from_inode(inode));
-		return -ENODEV;
-	}
-
-	struct eviction_tracker_node *new_node =
-		kmalloc(sizeof(struct eviction_tracker_node), GFP_KERNEL);
-
-	if (!new_node) {
-		printk(KERN_INFO "failed to allocate memory for new node\n");
-		return -ENOMEM;
-	}
-
-	new_node->inode = inode;
-
-	list_add_tail(&new_node->inode_list_head,
-		      &eviction_tracker->inode_list);
-
-	return 0;
-}
-
-struct inode *eviction_tracker_get_inode_for_eviction(dev_t device_id)
-{
-	struct eviction_tracker *eviction_tracker =
-		_get_eviction_tracker_from_device_id(device_id);
-
-	if (IS_ERR(eviction_tracker)) {
-		printk(KERN_INFO "device %d is not registered\n", device_id);
-		return ERR_PTR(-ENODEV);
-	}
-
-	struct eviction_policy *eviction_policy =
-		eviction_tracker->eviction_policy;
-
-	struct eviction_tracker_node *max_node = list_first_entry_or_null(
-		&eviction_tracker->inode_list, struct eviction_tracker_node,
-		inode_list_head);
-
-	if (!max_node) {
-		printk(KERN_INFO "inode list is empty\n");
+	if (best_candidate == NULL) {
+		printk(KERN_INFO "no file found for eviction\n");
+		mutex_unlock(&eviction_tracker_policy_mutex);
 		return ERR_PTR(-ENOENT);
 	}
 
-	struct eviction_tracker_node *iter_node;
-	list_for_each_entry(iter_node, &eviction_tracker->inode_list,
-			    inode_list_head) {
-		if (eviction_policy->compare(max_node->inode,
-					     iter_node->inode) > 0) {
-			max_node = iter_node;
-		}
-	}
-
-	return max_node->inode;
+	mutex_unlock(&eviction_tracker_policy_mutex);
+	return best_candidate;
 }
-//function get all registered devices and return with parameter
-int eviction_tracker_get_registered_devices(dev_t *devices, int max_devices)
+
+int eviction_tracker_change_policy(struct eviction_policy *eviction_policy)
 {
-	int i = 0;
-	struct eviction_tracker *eviction_tracker;
-	int bucket;
-	hash_for_each(registered_devices, bucket, eviction_tracker,
-		      registered_device_hashtable_node) {
-		if (i >= max_devices) {
-			return -ENOMEM;
-		}
-		devices[i] = eviction_tracker->device_id;
-		i++;
+	mutex_lock(&eviction_tracker_policy_mutex);
+	if (eviction_policy == NULL) {
+		mutex_unlock(&eviction_tracker_policy_mutex);
+		return -EINVAL;
 	}
-	return i;
+	eviction_policy = eviction_policy;
+	mutex_unlock(&eviction_tracker_policy_mutex);
+
+	return 0;
 }

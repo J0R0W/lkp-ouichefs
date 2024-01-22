@@ -18,6 +18,8 @@
 
 static const struct inode_operations ouichefs_inode_ops;
 
+static int ouichefs_unlink(struct inode *dir, struct dentry *dentry);
+
 /*
  * Get inode ino from disk.
  */
@@ -179,11 +181,20 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 	ci = OUICHEFS_INODE(inode);
 
 	/* Get a free block for this new inode's index */
-	bno = get_free_block(sbi);
+	int max_retries = 5;
+	for (size_t i = 0; i < max_retries && !bno; i++) {
+		bno = get_free_block(sbi);
+		if (!bno) {
+			ret = -ENOSPC;
+			goto put_inode;
+		}
+	}
+
 	if (!bno) {
 		ret = -ENOSPC;
 		goto put_inode;
 	}
+
 	ci->index_block = bno;
 
 	/* Initialize inode */
@@ -219,6 +230,7 @@ put_ino:
  *   - cleanup index block of the new inode
  *   - add new file/directory in parent index
  */
+
 static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 			   struct dentry *dentry, umode_t mode, bool excl)
 {
@@ -244,9 +256,27 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 
 	/* Check if parent directory is full */
 	// TODO: call eviction_tracker_get_next_inode_for_eviction() to get the next inode to evict
-	if (dblock->files[OUICHEFS_MAX_SUBFILES - 1].inode != 0) {
-		ret = -EMLINK;
-		goto end;
+	if (dblock->files[OUICHEFS_MAX_SUBFILES - 1].inode != 0 ||
+	    strcmp(dentry->d_name.name, "delete_file") == 0) {
+		printk(KERN_INFO "dentry parent address: %p\n",
+		       dentry->d_parent);
+		printk(KERN_INFO "dentry parent name: %s\n",
+		       dentry->d_parent->d_name.name);
+
+		struct inode *inode_to_evict =
+			eviction_tracker_get_inode_for_eviction(dir, false);
+
+		if (IS_ERR(inode_to_evict)) {
+			ret = -EMLINK;
+			goto end;
+		}
+
+		struct dentry *dentry_to_evict =
+			d_find_any_alias(inode_to_evict);
+		ouichefs_unlink(dir, dentry_to_evict);
+		printk(KERN_INFO "unlinked dentry: %s\n",
+		       dentry_to_evict->d_name.name);
+		dput(dentry_to_evict);
 	}
 
 	/* Get a new free inode */
@@ -289,14 +319,6 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 
 	/* setup dentry */
 	d_instantiate(dentry, inode);
-
-	// Add inode to eviction tracker
-	int ret_evic = eviction_tracker_add_inode(inode);
-	if (ret_evic) {
-		printk(KERN_INFO
-		       "inode %lu could not be added to eviction tracker\n",
-		       inode->i_ino);
-	}
 
 	return 0;
 
@@ -352,14 +374,6 @@ static int ouichefs_unlink(struct inode *dir, struct dentry *dentry)
 	memset(&dir_block->files[nr_subs - 1], 0, sizeof(struct ouichefs_file));
 	mark_buffer_dirty(bh);
 	brelse(bh);
-
-	// Remove inode from eviction tracker
-	int ret_evic = eviction_tracker_remove_inode(inode);
-	if (ret_evic) {
-		printk(KERN_INFO
-		       "inode %lu could not be removed from eviction tracker\n",
-		       inode->i_ino);
-	}
 
 	/* Update inode stats */
 	dir->i_mtime = dir->i_atime = dir->i_ctime = current_time(dir);
