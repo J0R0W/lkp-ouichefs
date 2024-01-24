@@ -91,6 +91,8 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 		return PTR_ERR(dentry);
 	}
 
+	//TODO investigate a crash here (happens occasionally? null pointer dereference)
+
 	// Trigger eviction for the target folder
 	ret = vfs_unlink(&nop_mnt_idmap, dentry->d_parent->d_inode, dentry,
 			 NULL);
