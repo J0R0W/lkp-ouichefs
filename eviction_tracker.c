@@ -4,6 +4,10 @@
 #include "eviction_tracker.h"
 #include "eviction_policy_examples.h"
 
+static struct eviction_policy *default_eviction_policy =
+	&eviction_policy_least_recently_accessed;
+
+// Is there a way to assign default_eviction_policy?
 static struct eviction_policy *eviction_policy =
 	&eviction_policy_least_recently_accessed;
 static DEFINE_MUTEX(eviction_tracker_policy_mutex);
@@ -76,15 +80,14 @@ struct inode *eviction_tracker_get_inode_for_eviction(struct inode *dir,
 	return best_candidate;
 }
 
-int eviction_tracker_change_policy(struct eviction_policy *eviction_policy)
+int eviction_tracker_change_policy(struct eviction_policy *new_eviction_policy)
 {
 	mutex_lock(&eviction_tracker_policy_mutex);
-	if (eviction_policy == NULL) {
-		mutex_unlock(&eviction_tracker_policy_mutex);
-		return -EINVAL;
-	}
-	eviction_policy = eviction_policy;
-	mutex_unlock(&eviction_tracker_policy_mutex);
 
+	eviction_policy = new_eviction_policy ? new_eviction_policy :
+						default_eviction_policy;
+
+	mutex_unlock(&eviction_tracker_policy_mutex);
 	return 0;
 }
+EXPORT_SYMBOL(eviction_tracker_change_policy);
