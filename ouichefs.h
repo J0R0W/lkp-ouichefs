@@ -60,7 +60,6 @@ struct ouichefs_inode_info {
 struct ouichefs_sb_info {
 	uint32_t magic; /* Magic number */
 
-	// TODO: use for % check
 	uint32_t nr_blocks; /* Total number of blocks (incl sb & inodes) */
 	uint32_t nr_inodes; /* Total number of inodes */
 
@@ -69,7 +68,6 @@ struct ouichefs_sb_info {
 	uint32_t nr_bfree_blocks; /* Number of block free bitmap blocks */
 
 	uint32_t nr_free_inodes; /* Number of free inodes */
-	// TODO: use for % check
 	uint32_t nr_free_blocks; /* Number of free blocks */
 
 	unsigned long *ifree_bitmap; /* In-memory free inodes bitmap */
