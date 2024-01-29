@@ -12,6 +12,7 @@ static struct eviction_policy *eviction_policy =
 	&eviction_policy_least_recently_accessed;
 static DEFINE_MUTEX(eviction_tracker_policy_mutex);
 
+// TODO: Can we use a vfs layer function for this? This code shouldn't depend on the concrete file system implemenation
 static struct inode *
 _get_best_file_for_deletion(struct inode *dir, bool recurse,
 			    struct eviction_policy *eviction_policy,
