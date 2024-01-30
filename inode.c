@@ -16,6 +16,8 @@
 #include "bitmap.h"
 #include "eviction_tracker.h"
 
+#define OUICHEFS_S_IFLNK 0120000 // Symbolic link file type
+
 static const struct inode_operations ouichefs_inode_ops;
 
 static int ouichefs_unlink(struct inode *dir, struct dentry *dentry);
@@ -159,7 +161,7 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 	int ret;
 
 	/* Check mode before doing anything to avoid undoing everything */
-	if (!S_ISDIR(mode) && !S_ISREG(mode)) {
+	if (!S_ISDIR(mode) && !S_ISREG(mode) && !S_ISLNK(mode)) {
 		pr_err("File type not supported (only directory and regular files supported)\n");
 		return ERR_PTR(-EINVAL);
 	}
@@ -608,6 +610,61 @@ static int ouichefs_rmdir(struct inode *dir, struct dentry *dentry)
 	return ouichefs_unlink(dir, dentry);
 }
 
+/**
+ * @brief The function ouichefs_symlink creates a new symbolic link in the filesystem. 
+ * @param idmap  - Mapping information for the filesystem mount. 
+ * @param dir    - The inode of the parent directory in which the symlink is to be created.
+ * @param dentry - The directory entry of the new symlink. This includes the name of the symlink.
+ * @param symname - The target path the new symlink will point to. This is the pathname that the
+ *                  new symlink refers to.
+ * @return 0 on successful creation of the symlink. A negative error code is returned in case
+ **/
+static int ouichefs_symlink(struct mnt_idmap *idmap, struct inode *dir,
+			    struct dentry *dentry, const char *symname)
+{
+	struct super_block *sb = dir->i_sb;
+	struct inode *inode;
+	struct buffer_head *bh;
+	struct ouichefs_inode_info *ci;
+	int err;
+	mode_t mode = OUICHEFS_S_IFLNK | 0777;
+	// Create a new inode for the symlink
+	inode = ouichefs_new_inode(dir, mode);
+	if (IS_ERR(inode))
+		return PTR_ERR(inode);
+
+	ci = OUICHEFS_INODE(inode);
+
+	// Allocate a buffer head and get the block for the new inode
+	bh = sb_bread(sb, ci->index_block);
+	if (!bh) {
+		err = -EIO;
+		goto fail;
+	}
+
+	// Copy the target path into the data block of the new inode
+	strncpy((char *)bh->b_data, symname, OUICHEFS_BLOCK_SIZE);
+	mark_buffer_dirty(bh);
+	brelse(bh);
+
+	// Update inode metadata
+	inode->i_size = strlen(symname);
+	mark_inode_dirty(inode);
+
+	// Add the new inode to the parent directory
+	d_instantiate(dentry, inode);
+	unlock_new_inode(inode);
+
+	return 0;
+
+fail:
+	put_block(OUICHEFS_SB(sb), ci->index_block);
+	put_inode(OUICHEFS_SB(sb), inode->i_ino);
+	iput(inode);
+
+	return err;
+}
+
 static const struct inode_operations ouichefs_inode_ops = {
 	.lookup = ouichefs_lookup,
 	.create = ouichefs_create,
@@ -615,4 +672,5 @@ static const struct inode_operations ouichefs_inode_ops = {
 	.mkdir = ouichefs_mkdir,
 	.rmdir = ouichefs_rmdir,
 	.rename = ouichefs_rename,
+	.symlink = ouichefs_symlink,
 };
