@@ -57,3 +57,4 @@ mkfs/*.img
 
 # Visual Studio Code Config
 .vscode
+.vscode-ctags

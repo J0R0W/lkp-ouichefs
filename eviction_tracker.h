@@ -1,19 +1,18 @@
 #ifndef _EVICTION_TRACKER_H
 #define _EVICTION_TRACKER_H
 
-#include <linux/rbtree.h>
 #include "eviction_policy.h"
 
-struct eviction_tracker {
-	struct rb_root root;
-	struct eviction_policy *eviction_policy;
-	struct mutex lock;
-	struct kref refcount;
+// Change the eviction policy for a file system device
+int eviction_tracker_change_policy(struct eviction_policy *eviction_policy);
+
+struct eviction_tracker_scan_result {
+	struct inode *best_candidate;
+	struct inode *parent;
 };
 
-struct eviction_tracker *
-get_eviction_tracker(struct eviction_policy *eviction_policy);
-void release_eviction_tracker(struct kref *refcount);
-bool add_inode_to_eviction_tracker(struct eviction_tracker *eviction_tracker,
-				   struct inode *inode, bool check_if_exists);
+// Get the next inode to be evicted for the given device
+bool eviction_tracker_get_inode_for_eviction(
+	struct inode *dir, bool recurse,
+	struct eviction_tracker_scan_result *result);
 #endif

@@ -1,113 +1,96 @@
-#include <linux/rbtree.h>
+#include <linux/buffer_head.h>
+
+#include "ouichefs.h"
 #include "eviction_tracker.h"
+#include "eviction_policy_examples.h"
 
-struct eviction_tracker_node {
-	// Reference to the eviction tracker that this node belongs to
-	// We need this to access the eviction policy from the compare_eviction_tracker_nodes function
-	struct eviction_tracker *eviction_tracker;
-	struct rb_node rb_node;
-	struct inode *inode;
-};
+static struct eviction_policy *default_eviction_policy =
+	&eviction_policy_least_recently_accessed;
 
-struct eviction_tracker *
-get_eviction_tracker(struct eviction_policy *eviction_policy)
+// Is there a way to assign default_eviction_policy?
+static struct eviction_policy *eviction_policy =
+	&eviction_policy_least_recently_accessed;
+static DEFINE_MUTEX(eviction_tracker_policy_mutex);
+
+// TODO: Can we use a vfs layer function for this? This code shouldn't depend on the concrete file system implemenation
+static void
+_get_best_file_for_deletion(struct inode *dir, bool recurse,
+			    struct eviction_policy *eviction_policy,
+			    struct eviction_tracker_scan_result *result)
 {
-	struct eviction_tracker *eviction_tracker =
-		kmalloc(sizeof(struct eviction_tracker), GFP_KERNEL);
-	eviction_tracker->root = RB_ROOT;
-	eviction_tracker->eviction_policy = eviction_policy;
-	mutex_init(&eviction_tracker->lock);
-	kref_init(&eviction_tracker->refcount);
+	struct super_block *sb = dir->i_sb;
+	struct ouichefs_inode_info *ci_dir = OUICHEFS_INODE(dir);
+	struct buffer_head *bh = NULL;
+	struct ouichefs_dir_block *dblock = NULL;
+	struct ouichefs_file *f = NULL;
+	int i;
 
-	// Pass ownership of eviction_tracker to caller
-	kref_get(&eviction_tracker->refcount);
-	return eviction_tracker;
-}
+	/* Read the directory index block on disk */
+	bh = sb_bread(sb, ci_dir->index_block);
+	if (!bh)
+		return;
+	dblock = (struct ouichefs_dir_block *)bh->b_data;
 
-void release_eviction_tracker(struct kref *refcount)
-{
-	struct eviction_tracker *eviction_tracker =
-		container_of(refcount, struct eviction_tracker, refcount);
-	mutex_destroy(&eviction_tracker->lock);
+	/* Search for the file in directory */
+	for (i = 0; i < OUICHEFS_MAX_SUBFILES; i++) {
+		f = &dblock->files[i];
+		if (!f->inode) {
+			break;
+		}
 
-	// Clear eviction tracker
-	struct rb_node *rb_node = rb_first(&eviction_tracker->root);
+		struct inode *inode = ouichefs_iget(sb, f->inode);
+		if (inode == NULL) {
+			brelse(bh);
+			return;
+		}
 
-	while (rb_node != NULL) {
-		rb_erase(rb_node, &eviction_tracker->root);
-		kfree(rb_entry(rb_node, struct eviction_tracker_node, rb_node));
-		rb_node = rb_first(&eviction_tracker->root);
-	}
-
-	printk(KERN_INFO "destroyed eviction tracker\n");
-}
-
-static bool compare_eviction_tracker_nodes(struct rb_node *rb_node1,
-					   const struct rb_node *rb_node2)
-{
-	struct eviction_tracker_node *node1 =
-		rb_entry(rb_node1, struct eviction_tracker_node, rb_node);
-	struct eviction_tracker_node *node2 =
-		rb_entry(rb_node2, struct eviction_tracker_node, rb_node);
-
-	struct eviction_policy *eviction_policy =
-		node1->eviction_tracker->eviction_policy;
-
-	return eviction_policy->compare(node1->inode, node2->inode) < 0;
-}
-
-bool add_inode_to_eviction_tracker(struct eviction_tracker *eviction_tracker,
-				   struct inode *inode, bool check_if_exists)
-{
-	if (check_if_exists) {
-		struct eviction_tracker_node *iter_node, *iter_node2;
-		rbtree_postorder_for_each_entry_safe(iter_node, iter_node2,
-						     &eviction_tracker->root,
-						     rb_node) {
-			if (iter_node->inode == inode) {
-				printk(KERN_INFO
-				       "inode %lu already in eviction tracker\n",
-				       inode->i_ino);
-				return false;
+		if (recurse && S_ISDIR(inode->i_mode)) {
+			_get_best_file_for_deletion(inode, recurse,
+						    eviction_policy, result);
+		} else if (S_ISREG(inode->i_mode)) {
+			if (result->best_candidate == NULL ||
+			    eviction_policy->compare(
+				    inode, result->best_candidate) > 0) {
+				result->best_candidate = inode;
+				result->parent = dir;
 			}
 		}
+
+		iput(inode);
 	}
 
-	struct eviction_tracker_node *new_node =
-		kmalloc(sizeof(struct eviction_tracker_node), GFP_KERNEL);
+	brelse(bh);
+}
 
-	if (!new_node) {
-		printk(KERN_INFO "failed to allocate memory for new node\n");
+bool eviction_tracker_get_inode_for_eviction(
+	struct inode *dir, bool recurse,
+	struct eviction_tracker_scan_result *result)
+{
+	result->best_candidate = NULL;
+	result->parent = NULL;
+
+	mutex_lock(&eviction_tracker_policy_mutex);
+
+	_get_best_file_for_deletion(dir, recurse, eviction_policy, result);
+	if (result->best_candidate == NULL) {
+		printk(KERN_INFO "no file found for eviction\n");
+		mutex_unlock(&eviction_tracker_policy_mutex);
 		return false;
 	}
 
-	new_node->inode = inode;
-
-	rb_add(&new_node->rb_node, &eviction_tracker->root,
-	       compare_eviction_tracker_nodes);
-	new_node->eviction_tracker = eviction_tracker;
-	printk(KERN_INFO "added inode %lu to eviction tracker\n", inode->i_ino);
+	mutex_unlock(&eviction_tracker_policy_mutex);
 
 	return true;
 }
 
-struct inode *get_inode_to_evict(struct eviction_tracker *eviction_tracker)
+int eviction_tracker_change_policy(struct eviction_policy *new_eviction_policy)
 {
-	struct rb_node *rb_node = rb_first(&eviction_tracker->root);
-	if (!rb_node) {
-		printk(KERN_INFO "eviction tracker is empty\n");
-		return NULL;
-	}
+	mutex_lock(&eviction_tracker_policy_mutex);
 
-	struct eviction_tracker_node *node =
-		rb_entry(rb_node, struct eviction_tracker_node, rb_node);
-	struct inode *inode = node->inode;
+	eviction_policy = new_eviction_policy ? new_eviction_policy :
+						default_eviction_policy;
 
-	rb_erase(&node->rb_node, &eviction_tracker->root);
-	kfree(node);
-
-	printk(KERN_INFO "removed inode %lu from eviction tracker\n",
-	       inode->i_ino);
-
-	return inode;
+	mutex_unlock(&eviction_tracker_policy_mutex);
+	return 0;
 }
+EXPORT_SYMBOL(eviction_tracker_change_policy);

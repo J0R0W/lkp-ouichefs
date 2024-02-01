@@ -46,7 +46,8 @@ static int ouichefs_file_get_block(struct inode *inode, sector_t iblock,
 	 * allocate it. Else, get the physical block number.
 	 */
 	if (index->blocks[iblock] == 0) {
-		if (!create) {
+		if (!create)
+		{
 			ret = 0;
 			goto brelse_index;
 		}
@@ -190,9 +191,36 @@ const struct address_space_operations ouichefs_aops = {
 	.write_end = ouichefs_write_end
 };
 
+// Used to track atime (inode still has "old" atime here)
+static int ouichefs_open(struct inode *inode, struct file *file)
+{
+	printk(KERN_INFO "open called\n");
+
+	//Print file timestamp human readable:
+	struct timespec64 ts = inode->i_atime;
+	struct tm t;
+	time64_to_tm(ts.tv_sec, 0, &t);
+
+	return generic_file_open(inode, file);
+}
+
+static int ouichefs_release(struct inode *inode, struct file *file)
+{
+	printk(KERN_INFO "release called\n");
+
+	//Print file timestamp human readable:
+	struct timespec64 ts = inode->i_atime;
+	struct tm t;
+	time64_to_tm(ts.tv_sec, 0, &t);
+
+	return 0;
+}
+
 const struct file_operations ouichefs_file_ops = {
 	.owner = THIS_MODULE,
 	.llseek = generic_file_llseek,
 	.read_iter = generic_file_read_iter,
-	.write_iter = generic_file_write_iter
+	.write_iter = generic_file_write_iter,
+	.open = ouichefs_open,
+	.release = ouichefs_release
 };

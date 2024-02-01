@@ -14,8 +14,15 @@
 
 #include "ouichefs.h"
 #include "bitmap.h"
+#include "eviction_tracker.h"
+
+#define OUICHEFS_S_IFLNK 0120000 // Symbolic link file type
 
 static const struct inode_operations ouichefs_inode_ops;
+
+int ouichefs_unlink_inode(struct inode *dir, struct inode *inode);
+
+extern int eviction_percentage_threshold;
 
 /*
  * Get inode ino from disk.
@@ -154,7 +161,7 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 	int ret;
 
 	/* Check mode before doing anything to avoid undoing everything */
-	if (!S_ISDIR(mode) && !S_ISREG(mode)) {
+	if (!S_ISDIR(mode) && !S_ISREG(mode) && !S_ISLNK(mode)) {
 		pr_err("File type not supported (only directory and regular files supported)\n");
 		return ERR_PTR(-EINVAL);
 	}
@@ -162,6 +169,25 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 	/* Check if inodes are available */
 	sb = dir->i_sb;
 	sbi = OUICHEFS_SB(sb);
+
+	while ((sbi->nr_free_blocks * 100) / sbi->nr_blocks <
+	       eviction_percentage_threshold) {
+		struct eviction_tracker_scan_result result;
+		if (!eviction_tracker_get_inode_for_eviction(dir, true,
+							     &result)) {
+			return ERR_PTR(-ENOENT);
+		}
+
+		ret = ouichefs_unlink_inode(result.parent,
+					    result.best_candidate);
+
+		if (ret < 0) {
+			printk(KERN_ERR "unlink of inode %ld failed\n",
+			       result.best_candidate->i_ino);
+			return ERR_PTR(ret);
+		}
+	}
+
 	if (sbi->nr_free_inodes == 0 || sbi->nr_free_blocks == 0)
 		return ERR_PTR(-ENOSPC);
 
@@ -178,10 +204,12 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 
 	/* Get a free block for this new inode's index */
 	bno = get_free_block(sbi);
+
 	if (!bno) {
 		ret = -ENOSPC;
 		goto put_inode;
 	}
+
 	ci->index_block = bno;
 
 	/* Initialize inode */
@@ -217,6 +245,7 @@ put_ino:
  *   - cleanup index block of the new inode
  *   - add new file/directory in parent index
  */
+
 static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 			   struct dentry *dentry, umode_t mode, bool excl)
 {
@@ -242,8 +271,24 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 
 	/* Check if parent directory is full */
 	if (dblock->files[OUICHEFS_MAX_SUBFILES - 1].inode != 0) {
-		ret = -EMLINK;
-		goto end;
+		printk(KERN_INFO "dentry parent address: %p\n",
+		       dentry->d_parent);
+		printk(KERN_INFO "dentry parent name: %s\n",
+		       dentry->d_parent->d_name.name);
+
+		struct eviction_tracker_scan_result result;
+		if (!eviction_tracker_get_inode_for_eviction(dir, false,
+							     &result)) {
+			ret = -EMLINK;
+			goto end;
+		}
+
+		int ret_unlink = ouichefs_unlink_inode(result.parent,
+						       result.best_candidate);
+		if (ret_unlink < 0) {
+			ret = ret_unlink;
+			goto end;
+		}
 	}
 
 	/* Get a new free inode */
@@ -305,11 +350,11 @@ end:
  *   - cleanup file index block
  *   - cleanup inode
  */
-static int ouichefs_unlink(struct inode *dir, struct dentry *dentry)
+
+int ouichefs_unlink_inode(struct inode *dir, struct inode *inode)
 {
 	struct super_block *sb = dir->i_sb;
 	struct ouichefs_sb_info *sbi = OUICHEFS_SB(sb);
-	struct inode *inode = d_inode(dentry);
 	struct buffer_head *bh = NULL, *bh2 = NULL;
 	struct ouichefs_dir_block *dir_block = NULL;
 	struct ouichefs_file_index_block *file_block = NULL;
@@ -392,6 +437,7 @@ clean_inode:
 	inode->i_mode = 0;
 	inode->i_ctime.tv_sec = inode->i_mtime.tv_sec = inode->i_atime.tv_sec =
 		0;
+	inode_dec_link_count(inode);
 	mark_inode_dirty(inode);
 
 	/* Free inode and index block from bitmap */
@@ -399,6 +445,12 @@ clean_inode:
 	put_inode(sbi, ino);
 
 	return 0;
+}
+
+static int ouichefs_unlink(struct inode *dir, struct dentry *dentry)
+{
+	struct inode *inode = d_inode(dentry);
+	return ouichefs_unlink_inode(dir, inode);
 }
 
 static int ouichefs_rename(struct mnt_idmap *idmap, struct inode *old_dir,
@@ -538,6 +590,61 @@ static int ouichefs_rmdir(struct inode *dir, struct dentry *dentry)
 	return ouichefs_unlink(dir, dentry);
 }
 
+/**
+ * @brief The function ouichefs_symlink creates a new symbolic link in the filesystem. 
+ * @param idmap  - Mapping information for the filesystem mount. 
+ * @param dir    - The inode of the parent directory in which the symlink is to be created.
+ * @param dentry - The directory entry of the new symlink. This includes the name of the symlink.
+ * @param symname - The target path the new symlink will point to. This is the pathname that the
+ *                  new symlink refers to.
+ * @return 0 on successful creation of the symlink. A negative error code is returned in case
+ **/
+static int ouichefs_symlink(struct mnt_idmap *idmap, struct inode *dir,
+			    struct dentry *dentry, const char *symname)
+{
+	struct super_block *sb = dir->i_sb;
+	struct inode *inode;
+	struct buffer_head *bh;
+	struct ouichefs_inode_info *ci;
+	int err;
+	mode_t mode = OUICHEFS_S_IFLNK | 0777;
+	// Create a new inode for the symlink
+	inode = ouichefs_new_inode(dir, mode);
+	if (IS_ERR(inode))
+		return PTR_ERR(inode);
+
+	ci = OUICHEFS_INODE(inode);
+
+	// Allocate a buffer head and get the block for the new inode
+	bh = sb_bread(sb, ci->index_block);
+	if (!bh) {
+		err = -EIO;
+		goto fail;
+	}
+
+	// Copy the target path into the data block of the new inode
+	strncpy((char *)bh->b_data, symname, OUICHEFS_BLOCK_SIZE);
+	mark_buffer_dirty(bh);
+	brelse(bh);
+
+	// Update inode metadata
+	inode->i_size = strlen(symname);
+	mark_inode_dirty(inode);
+
+	// Add the new inode to the parent directory
+	d_instantiate(dentry, inode);
+	unlock_new_inode(inode);
+
+	return 0;
+
+fail:
+	put_block(OUICHEFS_SB(sb), ci->index_block);
+	put_inode(OUICHEFS_SB(sb), inode->i_ino);
+	iput(inode);
+
+	return err;
+}
+
 static const struct inode_operations ouichefs_inode_ops = {
 	.lookup = ouichefs_lookup,
 	.create = ouichefs_create,
@@ -545,4 +652,5 @@ static const struct inode_operations ouichefs_inode_ops = {
 	.mkdir = ouichefs_mkdir,
 	.rmdir = ouichefs_rmdir,
 	.rename = ouichefs_rename,
+	.symlink = ouichefs_symlink,
 };
