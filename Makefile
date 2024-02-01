@@ -1,5 +1,5 @@
 obj-m += ouichefs.o
-ouichefs-objs := fs.o super.o inode.o file.o dir.o
+ouichefs-objs := fs.o super.o inode.o file.o dir.o eviction_tracker.o
 
 KERNELDIR = ../../Linux_Vm/linux-6.5.7
 SHARE_DIR = ../../Linux_Vm/share
