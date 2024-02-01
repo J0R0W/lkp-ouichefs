@@ -16,9 +16,8 @@
 #include "bitmap.h"
 #include "eviction_tracker.h"
 
-#define OUICHEFS_S_IFLNK 0120000 // Symbolic link file type
-
 static const struct inode_operations ouichefs_inode_ops;
+static const struct inode_operations ouichefs_symlink_inode_ops;
 
 int ouichefs_unlink_inode(struct inode *dir, struct inode *inode);
 
@@ -83,6 +82,10 @@ struct inode *ouichefs_iget(struct super_block *sb, unsigned long ino)
 		inode->i_fop = &ouichefs_dir_ops;
 	} else if (S_ISREG(inode->i_mode)) {
 		inode->i_fop = &ouichefs_file_ops;
+		inode->i_mapping->a_ops = &ouichefs_aops;
+	} else if (S_ISLNK(inode->i_mode)) {
+		inode->i_fop = &ouichefs_file_ops;
+		inode->i_op = &ouichefs_symlink_inode_ops;
 		inode->i_mapping->a_ops = &ouichefs_aops;
 	}
 
@@ -220,6 +223,11 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 		inode->i_fop = &ouichefs_dir_ops;
 		set_nlink(inode, 2); /* . and .. */
 	} else if (S_ISREG(mode)) {
+		inode->i_size = 0;
+		inode->i_fop = &ouichefs_file_ops;
+		inode->i_mapping->a_ops = &ouichefs_aops;
+		set_nlink(inode, 1);
+	} else if (S_ISLNK(mode)) {
 		inode->i_size = 0;
 		inode->i_fop = &ouichefs_file_ops;
 		inode->i_mapping->a_ops = &ouichefs_aops;
@@ -602,47 +610,49 @@ static int ouichefs_rmdir(struct inode *dir, struct dentry *dentry)
 static int ouichefs_symlink(struct mnt_idmap *idmap, struct inode *dir,
 			    struct dentry *dentry, const char *symname)
 {
-	struct super_block *sb = dir->i_sb;
-	struct inode *inode;
-	struct buffer_head *bh;
-	struct ouichefs_inode_info *ci;
-	int err;
-	mode_t mode = OUICHEFS_S_IFLNK | 0777;
-	// Create a new inode for the symlink
-	inode = ouichefs_new_inode(dir, mode);
-	if (IS_ERR(inode))
+	ouichefs_create(NULL, dir, dentry, S_IFLNK | S_IRWXUGO, 0);
+
+	struct inode *inode = d_inode(dentry);
+
+	if (IS_ERR(inode)) {
 		return PTR_ERR(inode);
-
-	ci = OUICHEFS_INODE(inode);
-
-	// Allocate a buffer head and get the block for the new inode
-	bh = sb_bread(sb, ci->index_block);
-	if (!bh) {
-		err = -EIO;
-		goto fail;
 	}
 
-	// Copy the target path into the data block of the new inode
-	strncpy((char *)bh->b_data, symname, OUICHEFS_BLOCK_SIZE);
+	struct buffer_head *bh =
+		sb_bread(dir->i_sb, OUICHEFS_INODE(inode)->index_block);
+	if (!bh) {
+		return -EIO;
+	}
+
+	strncpy(bh->b_data, symname, OUICHEFS_BLOCK_SIZE);
 	mark_buffer_dirty(bh);
 	brelse(bh);
 
-	// Update inode metadata
 	inode->i_size = strlen(symname);
 	mark_inode_dirty(inode);
 
-	// Add the new inode to the parent directory
-	d_instantiate(dentry, inode);
-	unlock_new_inode(inode);
-
 	return 0;
+}
 
-fail:
-	put_block(OUICHEFS_SB(sb), ci->index_block);
-	put_inode(OUICHEFS_SB(sb), inode->i_ino);
-	iput(inode);
+// Callback after get_link is called so that bh can be released
+static void release_bh(void *arg)
+{
+	struct buffer_head *bh = (struct buffer_head *)arg;
+	brelse(bh);
+}
 
-	return err;
+static const char *ouichefs_get_link(struct dentry *dentry, struct inode *inode,
+				     struct delayed_call *done)
+{
+	struct buffer_head *bh =
+		sb_bread(inode->i_sb, OUICHEFS_INODE(inode)->index_block);
+	if (!bh) {
+		return ERR_PTR(-EIO);
+	}
+
+	set_delayed_call(done, release_bh, bh);
+
+	return bh->b_data;
 }
 
 static const struct inode_operations ouichefs_inode_ops = {
@@ -653,4 +663,11 @@ static const struct inode_operations ouichefs_inode_ops = {
 	.rmdir = ouichefs_rmdir,
 	.rename = ouichefs_rename,
 	.symlink = ouichefs_symlink,
+	.link = simple_link
+};
+
+static const struct inode_operations ouichefs_symlink_inode_ops = {
+	.get_link = ouichefs_get_link,
+	//Why is this not necessary?
+	//.symlink = ouichefs_symlink,
 };
