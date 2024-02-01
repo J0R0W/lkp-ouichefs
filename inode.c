@@ -20,7 +20,7 @@
 
 static const struct inode_operations ouichefs_inode_ops;
 
-static int ouichefs_unlink(struct inode *dir, struct dentry *dentry);
+int ouichefs_unlink_inode(struct inode *dir, struct inode *inode);
 
 extern int eviction_percentage_threshold;
 
@@ -172,42 +172,18 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 
 	while ((sbi->nr_free_blocks * 100) / sbi->nr_blocks <
 	       eviction_percentage_threshold) {
-		struct inode *inode_for_eviction =
-			eviction_tracker_get_inode_for_eviction(dir, true);
-		if (IS_ERR(inode_for_eviction)) {
-			return ERR_PTR(PTR_ERR(inode_for_eviction));
+		struct eviction_tracker_scan_result result;
+		if (!eviction_tracker_get_inode_for_eviction(dir, true,
+							     &result)) {
+			return ERR_PTR(-ENOENT);
 		}
 
-		struct dentry *dentry_for_eviction =
-			d_find_any_alias(inode_for_eviction);
-
-		if (IS_ERR(dentry_for_eviction)) {
-			printk(KERN_ERR
-			       "something went wrong (File: %s Line: %d\n",
-			       __FILE__, __LINE__);
-			dput(dentry_for_eviction);
-			return ERR_PTR(PTR_ERR(dentry_for_eviction));
-		}
-
-		struct dentry *parent = dget_parent(dentry_for_eviction);
-
-		if (IS_ERR(parent)) {
-			printk(KERN_ERR "parent of %s not found\n",
-			       dentry_for_eviction->d_name.name);
-			dput(dentry_for_eviction);
-			dput(parent);
-			return ERR_PTR(PTR_ERR(parent));
-		}
-
-		ret = vfs_unlink(&nop_mnt_idmap, d_inode(parent),
-				 dentry_for_eviction, NULL);
-
-		dput(dentry_for_eviction);
-		dput(parent);
+		ret = ouichefs_unlink_inode(result.parent,
+					    result.best_candidate);
 
 		if (ret < 0) {
-			printk(KERN_ERR "unlink of file %s failed\n",
-			       dentry_for_eviction->d_name.name);
+			printk(KERN_ERR "unlink of inode %ld failed\n",
+			       result.best_candidate->i_ino);
 			return ERR_PTR(ret);
 		}
 	}
@@ -300,20 +276,19 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 		printk(KERN_INFO "dentry parent name: %s\n",
 		       dentry->d_parent->d_name.name);
 
-		struct inode *inode_to_evict =
-			eviction_tracker_get_inode_for_eviction(dir, false);
-
-		if (IS_ERR(inode_to_evict)) {
+		struct eviction_tracker_scan_result result;
+		if (!eviction_tracker_get_inode_for_eviction(dir, false,
+							     &result)) {
 			ret = -EMLINK;
 			goto end;
 		}
 
-		struct dentry *dentry_to_evict =
-			d_find_any_alias(inode_to_evict);
-		ouichefs_unlink(dir, dentry_to_evict);
-		printk(KERN_INFO "unlinked dentry: %s\n",
-		       dentry_to_evict->d_name.name);
-		dput(dentry_to_evict);
+		int ret_unlink = ouichefs_unlink_inode(result.parent,
+						       result.best_candidate);
+		if (ret_unlink < 0) {
+			ret = ret_unlink;
+			goto end;
+		}
 	}
 
 	/* Get a new free inode */
@@ -375,11 +350,11 @@ end:
  *   - cleanup file index block
  *   - cleanup inode
  */
-static int ouichefs_unlink(struct inode *dir, struct dentry *dentry)
+
+int ouichefs_unlink_inode(struct inode *dir, struct inode *inode)
 {
 	struct super_block *sb = dir->i_sb;
 	struct ouichefs_sb_info *sbi = OUICHEFS_SB(sb);
-	struct inode *inode = d_inode(dentry);
 	struct buffer_head *bh = NULL, *bh2 = NULL;
 	struct ouichefs_dir_block *dir_block = NULL;
 	struct ouichefs_file_index_block *file_block = NULL;
@@ -470,6 +445,12 @@ clean_inode:
 	put_inode(sbi, ino);
 
 	return 0;
+}
+
+static int ouichefs_unlink(struct inode *dir, struct dentry *dentry)
+{
+	struct inode *inode = d_inode(dentry);
+	return ouichefs_unlink_inode(dir, inode);
 }
 
 static int ouichefs_rename(struct mnt_idmap *idmap, struct inode *old_dir,

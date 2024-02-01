@@ -58,6 +58,8 @@ module_param_cb(eviction_percentage_threshold,
 		&eviction_percentage_threshold_ops,
 		&eviction_percentage_threshold, 0664);
 
+extern int ouichefs_unlink_inode(struct inode *dir, struct inode *inode);
+
 // TODO: Check if the path is an ouichefs path or belongs to another file system
 static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 					    struct kobj_attribute *attr,
@@ -73,40 +75,25 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 	}
 
 	// Get inode for eviction
-	struct inode *inode = eviction_tracker_get_inode_for_eviction(
-		d_inode(path.dentry), recurse);
-
-	if (IS_ERR(inode)) {
+	struct eviction_tracker_scan_result result;
+	if (!eviction_tracker_get_inode_for_eviction(d_inode(path.dentry),
+						     recurse, &result)) {
 		printk(KERN_ERR "Eviction failed for device %d and folder %s\n",
 		       path.dentry->d_sb->s_dev, path.dentry->d_name.name);
 		path_put(&path);
-		return PTR_ERR(inode);
+		return -ENOENT;
 	}
-
-	struct dentry *dentry = d_find_any_alias(inode);
-
-	if (IS_ERR_OR_NULL(dentry)) {
-		printk(KERN_ERR "Eviction failed for device %d and folder %s\n",
-		       path.dentry->d_sb->s_dev, path.dentry->d_name.name);
-		path_put(&path);
-		return PTR_ERR(dentry);
-	}
-
-	//TODO investigate a crash here (happens occasionally? null pointer dereference)
 
 	// Trigger eviction for the target folder
-	ret = vfs_unlink(&nop_mnt_idmap, dentry->d_parent->d_inode, dentry,
-			 NULL);
+	ret = ouichefs_unlink_inode(result.parent, result.best_candidate);
 
 	if (ret < 0) {
 		printk(KERN_ERR "Eviction failed for device %d and folder %s\n",
 		       path.dentry->d_sb->s_dev, path.dentry->d_name.name);
-		dput(dentry);
 		path_put(&path);
 		return ret;
 	}
 
-	dput(dentry);
 	path_put(&path);
 	return count;
 }

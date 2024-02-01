@@ -13,10 +13,10 @@ static struct eviction_policy *eviction_policy =
 static DEFINE_MUTEX(eviction_tracker_policy_mutex);
 
 // TODO: Can we use a vfs layer function for this? This code shouldn't depend on the concrete file system implemenation
-static struct inode *
+static void
 _get_best_file_for_deletion(struct inode *dir, bool recurse,
 			    struct eviction_policy *eviction_policy,
-			    struct inode *best_candidate)
+			    struct eviction_tracker_scan_result *result)
 {
 	struct super_block *sb = dir->i_sb;
 	struct ouichefs_inode_info *ci_dir = OUICHEFS_INODE(dir);
@@ -28,7 +28,7 @@ _get_best_file_for_deletion(struct inode *dir, bool recurse,
 	/* Read the directory index block on disk */
 	bh = sb_bread(sb, ci_dir->index_block);
 	if (!bh)
-		return ERR_PTR(-EIO);
+		return;
 	dblock = (struct ouichefs_dir_block *)bh->b_data;
 
 	/* Search for the file in directory */
@@ -41,44 +41,46 @@ _get_best_file_for_deletion(struct inode *dir, bool recurse,
 		struct inode *inode = ouichefs_iget(sb, f->inode);
 		if (inode == NULL) {
 			brelse(bh);
-			return best_candidate;
+			return;
 		}
 
 		if (recurse && S_ISDIR(inode->i_mode)) {
-			best_candidate = _get_best_file_for_deletion(
-				inode, recurse, eviction_policy,
-				best_candidate);
+			_get_best_file_for_deletion(inode, recurse,
+						    eviction_policy, result);
 		} else if (S_ISREG(inode->i_mode)) {
-			if (best_candidate == NULL ||
-			    eviction_policy->compare(inode, best_candidate) >
-				    0) {
-				best_candidate = inode;
+			if (result->best_candidate == NULL ||
+			    eviction_policy->compare(
+				    inode, result->best_candidate) > 0) {
+				result->best_candidate = inode;
+				result->parent = dir;
 			}
-		} else {
-			printk(KERN_INFO "inode %s is unknown\n", f->filename);
 		}
+
 		iput(inode);
 	}
 
 	brelse(bh);
-	return best_candidate;
 }
 
-struct inode *eviction_tracker_get_inode_for_eviction(struct inode *dir,
-						      bool recurse)
+bool eviction_tracker_get_inode_for_eviction(
+	struct inode *dir, bool recurse,
+	struct eviction_tracker_scan_result *result)
 {
-	mutex_lock(&eviction_tracker_policy_mutex);
-	struct inode *best_candidate = _get_best_file_for_deletion(
-		dir, recurse, eviction_policy, NULL);
+	result->best_candidate = NULL;
+	result->parent = NULL;
 
-	if (best_candidate == NULL) {
+	mutex_lock(&eviction_tracker_policy_mutex);
+
+	_get_best_file_for_deletion(dir, recurse, eviction_policy, result);
+	if (result->best_candidate == NULL) {
 		printk(KERN_INFO "no file found for eviction\n");
 		mutex_unlock(&eviction_tracker_policy_mutex);
-		return ERR_PTR(-ENOENT);
+		return false;
 	}
 
 	mutex_unlock(&eviction_tracker_policy_mutex);
-	return best_candidate;
+
+	return true;
 }
 
 int eviction_tracker_change_policy(struct eviction_policy *new_eviction_policy)
