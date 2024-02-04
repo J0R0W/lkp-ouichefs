@@ -229,8 +229,7 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 		set_nlink(inode, 1);
 	} else if (S_ISLNK(mode)) {
 		inode->i_size = 0;
-		inode->i_fop = &ouichefs_file_ops;
-		inode->i_mapping->a_ops = &ouichefs_aops;
+		inode->i_op = &ouichefs_symlink_inode_ops;
 		set_nlink(inode, 1);
 	}
 
@@ -610,7 +609,12 @@ static int ouichefs_rmdir(struct inode *dir, struct dentry *dentry)
 static int ouichefs_symlink(struct mnt_idmap *idmap, struct inode *dir,
 			    struct dentry *dentry, const char *symname)
 {
-	ouichefs_create(NULL, dir, dentry, S_IFLNK | S_IRWXUGO, 0);
+	int ret = ouichefs_create(&nop_mnt_idmap, dir, dentry,
+				  S_IFLNK | S_IRWXUGO, 0);
+	if (ret < 0) {
+		printk(KERN_ERR "symlink creation failed\n");
+		return ret;
+	}
 
 	struct inode *inode = d_inode(dentry);
 
