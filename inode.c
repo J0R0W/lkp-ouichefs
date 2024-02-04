@@ -672,6 +672,4 @@ static const struct inode_operations ouichefs_inode_ops = {
 
 static const struct inode_operations ouichefs_symlink_inode_ops = {
 	.get_link = ouichefs_get_link,
-	//Why is this not necessary?
-	//.symlink = ouichefs_symlink,
 };
