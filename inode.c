@@ -374,6 +374,8 @@ int ouichefs_unlink_inode(struct inode *dir, struct inode *inode)
 
 	/* Search for inode in parent index and get number of subfiles */
 	for (i = 0; i < OUICHEFS_MAX_SUBFILES; i++) {
+		// This is problematic: we only check for inode number, not for the name - if a directory contains 2 hardlinks to the same inode, we will possibly remove the wrong one
+		// We would need some check to see if the name matches the dentry name but we don't have access to the dentry here
 		if (dir_block->files[i].inode == ino)
 			f_id = i;
 		else if (dir_block->files[i].inode == 0)
@@ -394,6 +396,12 @@ int ouichefs_unlink_inode(struct inode *dir, struct inode *inode)
 	if (S_ISDIR(inode->i_mode))
 		inode_dec_link_count(dir);
 	mark_inode_dirty(dir);
+
+	// Only decrement link count if link count is 2 or more
+	if (inode->i_nlink > 1) {
+		inode_dec_link_count(inode);
+		return 0;
+	}
 
 	/*
 	 * Cleanup pointed blocks if unlinking a file. If we fail to read the
@@ -654,6 +662,69 @@ static const char *ouichefs_get_link(struct dentry *dentry, struct inode *inode,
 	return bh->b_data;
 }
 
+static int ouichefs_link(struct dentry *old_dentry, struct inode *dir,
+			 struct dentry *dentry)
+{
+	int ret = simple_link(old_dentry, dir, dentry);
+	if (ret < 0) {
+		printk(KERN_ERR "link creation failed\n");
+		return ret;
+	}
+
+	struct inode *inode = d_inode(old_dentry);
+
+	// Add inode to dir index
+	struct super_block *sb = dir->i_sb;
+	struct ouichefs_inode_info *ci_dir = OUICHEFS_INODE(dir);
+	struct buffer_head *bh = sb_bread(sb, ci_dir->index_block);
+	if (!bh) {
+		return -EIO;
+	}
+	struct ouichefs_dir_block *dblock =
+		(struct ouichefs_dir_block *)bh->b_data;
+
+	// If target directory is full, evict an inode
+	if (dblock->files[OUICHEFS_MAX_SUBFILES - 1].inode != 0) {
+		struct eviction_tracker_scan_result result;
+		if (!eviction_tracker_get_inode_for_eviction(dir, false,
+							     &result)) {
+			dput(dentry);
+			return -EMLINK;
+		}
+
+		int ret_unlink = ouichefs_unlink_inode(result.parent,
+						       result.best_candidate);
+		if (ret_unlink < 0) {
+			dput(dentry);
+			return ret_unlink;
+		}
+	}
+
+	// Find first free slot in parent index and register new inode
+	int i;
+	for (i = 0; i < OUICHEFS_MAX_SUBFILES; i++) {
+		if (dblock->files[i].inode == 0) {
+			break;
+		}
+	}
+	dblock->files[i].inode = inode->i_ino;
+	strscpy(dblock->files[i].filename, dentry->d_name.name,
+		OUICHEFS_FILENAME_LEN);
+	mark_buffer_dirty(bh);
+	brelse(bh);
+
+	// Update stats and mark dir and new inode dirty
+	dir->i_mtime = dir->i_atime = dir->i_ctime = current_time(dir);
+	//mark_inode_dirty(inode);
+
+	mark_inode_dirty(dir);
+
+	// I don't get why we must put the dentry here but it seems to be necessary...
+	dput(dentry);
+
+	return 0;
+}
+
 static const struct inode_operations ouichefs_inode_ops = {
 	.lookup = ouichefs_lookup,
 	.create = ouichefs_create,
@@ -662,7 +733,7 @@ static const struct inode_operations ouichefs_inode_ops = {
 	.rmdir = ouichefs_rmdir,
 	.rename = ouichefs_rename,
 	.symlink = ouichefs_symlink,
-	.link = simple_link
+	.link = ouichefs_link,
 };
 
 static const struct inode_operations ouichefs_symlink_inode_ops = {
