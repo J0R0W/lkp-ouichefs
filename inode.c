@@ -488,6 +488,25 @@ static int ouichefs_rename(struct mnt_idmap *idmap, struct inode *old_dir,
 	if (!bh_new)
 		return -EIO;
 	dir_block = (struct ouichefs_dir_block *)bh_new->b_data;
+
+	// Check if new_dir is full (and != old_dir) and evict if necessary
+	if (new_dir != old_dir &&
+	    dir_block->files[OUICHEFS_MAX_SUBFILES - 1].inode != 0) {
+		struct eviction_tracker_scan_result result;
+		if (!eviction_tracker_get_inode_for_eviction(new_dir, false,
+							     &result)) {
+			ret = -EMLINK;
+			goto relse_new;
+		}
+
+		int ret_unlink = ouichefs_unlink_inode(result.parent,
+						       result.best_candidate);
+		if (ret_unlink < 0) {
+			ret = ret_unlink;
+			goto relse_new;
+		}
+	}
+
 	for (i = 0; i < OUICHEFS_MAX_SUBFILES; i++) {
 		/* if old_dir == new_dir, save the renamed file position */
 		if (new_dir == old_dir) {
