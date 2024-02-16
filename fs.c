@@ -142,15 +142,11 @@ struct dentry *ouichefs_mount(struct file_system_type *fs_type, int flags,
 	}
 	pr_info("'%s' mount success\n", dev_name);
 
-	printk(KERN_INFO "dentry name: %s\n", dentry->d_name.name);
-	printk(KERN_INFO "device id: %d\n", dentry->d_sb->s_dev);
 	//Get the superblock from inode
 	struct super_block *sb = dentry->d_sb;
 	//get sbi
 	struct ouichefs_sb_info *sbi = OUICHEFS_SB(sb);
 
-	printk(KERN_INFO "Total inodes: %u\n", sbi->nr_inodes);
-	printk(KERN_INFO "Free inodes: %u\n", sbi->nr_free_inodes);
 	return dentry;
 }
 

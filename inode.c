@@ -278,11 +278,6 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 
 	/* Check if parent directory is full */
 	if (dblock->files[OUICHEFS_MAX_SUBFILES - 1].inode != 0) {
-		printk(KERN_INFO "dentry parent address: %p\n",
-		       dentry->d_parent);
-		printk(KERN_INFO "dentry parent name: %s\n",
-		       dentry->d_parent->d_name.name);
-
 		struct eviction_tracker_scan_result result;
 		if (!eviction_tracker_get_inode_for_eviction(dir, false,
 							     &result)) {
