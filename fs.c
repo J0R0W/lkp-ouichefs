@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * ouiche_fs - a simple educational filesystem for Linux
  *
@@ -19,18 +19,18 @@
 #include "ouichefs.h"
 #include "eviction_tracker.h"
 
-// Parameter how many blocks can be free before eviction is triggered (in %)
+/* Parameter how many blocks can be free before eviction is triggered (in %) */
 int eviction_percentage_threshold = 10;
 MODULE_PARM_DESC(
 	eviction_percentage_threshold,
 	"Parameter how many blocks can be free before eviction is triggered (in %%) (Default: 10)");
 
+/* Setter function used by struct kernel_parm_ops */
 static int set_eviction_percentage_threshold(const char *val,
 					     const struct kernel_param *kp)
 {
-	printk(KERN_INFO
-	       "Setting eviction_percentage_threshold to %s (currently: %d)\n",
-	       val, eviction_percentage_threshold);
+	pr_info("Setting eviction_percentage_threshold to %s (currently: %d)\n",
+		val, eviction_percentage_threshold);
 	int ret = param_set_int(val, kp);
 
 	if (ret < 0)
@@ -38,14 +38,13 @@ static int set_eviction_percentage_threshold(const char *val,
 
 	if (eviction_percentage_threshold < 0 ||
 	    eviction_percentage_threshold >= 100) {
-		printk(KERN_ERR
-		       "Invalid eviction_percentage_threshold: %d - must be >= 0 and < 100\n",
+		pr_err("Invalid eviction_percentage_threshold: %d - must be >= 0 and < 100\n",
 		       eviction_percentage_threshold);
 		return -EINVAL;
 	}
 
-	printk(KERN_INFO "eviction_percentage_threshold set to %d\n",
-	       eviction_percentage_threshold);
+	pr_info("eviction_percentage_threshold set to %d\n",
+		eviction_percentage_threshold);
 	return 0;
 }
 
@@ -60,7 +59,9 @@ module_param_cb(eviction_percentage_threshold,
 
 extern int ouichefs_unlink_inode(struct inode *dir, struct inode *inode);
 
-// TODO: Check if the path is an ouichefs path or belongs to another file system
+/* TODO: Check if the path is an ouichefs path
+ * or belongs to another file system
+ */
 static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 					    struct kobj_attribute *attr,
 					    const char *buf, size_t count,
@@ -70,25 +71,26 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 	int ret = kern_path(buf, LOOKUP_FOLLOW | LOOKUP_DIRECTORY, &path);
 
 	if (ret < 0) {
-		printk(KERN_ERR "Invalid input: %s\n", buf);
+		pr_err("Invalid input: %s\n", buf);
 		return ret;
 	}
 
-	// Get inode for eviction
+	/* Get inode for eviction */
 	struct eviction_tracker_scan_result result;
+
 	if (!eviction_tracker_get_inode_for_eviction(d_inode(path.dentry),
 						     recurse, &result)) {
-		printk(KERN_ERR "Eviction failed for device %d and folder %s\n",
+		pr_err("Eviction failed for device %d and folder %s\n",
 		       path.dentry->d_sb->s_dev, path.dentry->d_name.name);
 		path_put(&path);
 		return -ENOENT;
 	}
 
-	// Trigger eviction for the target folder
+	/* Trigger eviction for the target folder */
 	ret = ouichefs_unlink_inode(result.parent, result.best_candidate);
 
 	if (ret < 0) {
-		printk(KERN_ERR "Eviction failed for device %d and folder %s\n",
+		pr_err("Eviction failed for device %d and folder %s\n",
 		       path.dentry->d_sb->s_dev, path.dentry->d_name.name);
 		path_put(&path);
 		return ret;
@@ -98,12 +100,10 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 	return count;
 }
 
-/// @brief Trigger eviction for a device by writing its device id to the evict file
-/// @param kobj
-/// @param attr
-/// @param buf
-/// @param count
-/// @return Number of bytes written
+/*
+ * Trigger recursive eviction for a directory
+ * by writing the start path to the evict_recursive file
+ */
 static ssize_t ouichefs_evict_recursive_store(struct kobject *kobj,
 					      struct kobj_attribute *attr,
 					      const char *buf, size_t count)
@@ -111,6 +111,10 @@ static ssize_t ouichefs_evict_recursive_store(struct kobject *kobj,
 	return ouichefs_evict_store_general(kobj, attr, buf, count, true);
 }
 
+/*
+ * Trigger non-recursive eviction for a directory
+ * by writing the start path to the evict file
+ */
 static ssize_t ouichefs_evict_store(struct kobject *kobj,
 				    struct kobj_attribute *attr,
 				    const char *buf, size_t count)
@@ -142,15 +146,6 @@ struct dentry *ouichefs_mount(struct file_system_type *fs_type, int flags,
 	}
 	pr_info("'%s' mount success\n", dev_name);
 
-	printk(KERN_INFO "dentry name: %s\n", dentry->d_name.name);
-	printk(KERN_INFO "device id: %d\n", dentry->d_sb->s_dev);
-	//Get the superblock from inode
-	struct super_block *sb = dentry->d_sb;
-	//get sbi
-	struct ouichefs_sb_info *sbi = OUICHEFS_SB(sb);
-
-	printk(KERN_INFO "Total inodes: %u\n", sbi->nr_inodes);
-	printk(KERN_INFO "Free inodes: %u\n", sbi->nr_free_inodes);
 	return dentry;
 }
 
@@ -159,7 +154,6 @@ struct dentry *ouichefs_mount(struct file_system_type *fs_type, int flags,
  */
 void ouichefs_kill_sb(struct super_block *sb)
 {
-	//kill_anon_super(sb);
 	kill_block_super(sb);
 	pr_info("unmounted disk\n");
 }
@@ -189,25 +183,22 @@ static int __init ouichefs_init(void)
 		goto err_inode;
 	}
 
-	// Create a kobject and add it to the kernel
+	/* Create a kobject and add it to the kernel */
 	ouichefs_kobject = kobject_create_and_add("ouichefs", kernel_kobj);
 
-	if (!ouichefs_kobject) {
+	if (!ouichefs_kobject)
 		pr_err("failed to create the ouichefs\n");
-	}
 
 	int error = sysfs_create_file(ouichefs_kobject,
 				      &ouichefs_evict_recursive_attribute.attr);
-	if (error) {
+	if (error)
 		pr_err("failed to create the recursive file in /sys/kernel/ouichefs\n");
-	}
 
 	error = sysfs_create_file(ouichefs_kobject,
 				  &ouichefs_evict_attribute.attr);
 
-	if (error) {
+	if (error)
 		pr_err("failed to create the non-recursive file in /sys/kernel/ouichefs\n");
-	}
 
 	pr_info("module loaded\n");
 	return 0;

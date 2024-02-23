@@ -7,12 +7,15 @@
 static struct eviction_policy *default_eviction_policy =
 	&eviction_policy_least_recently_accessed;
 
-// Is there a way to assign default_eviction_policy?
+/* Is there a way to assign default_eviction_policy? */
 static struct eviction_policy *eviction_policy =
 	&eviction_policy_least_recently_accessed;
 static DEFINE_MUTEX(eviction_tracker_policy_mutex);
 
-// TODO: Can we use a vfs layer function for this? This code shouldn't depend on the concrete file system implemenation
+/*
+ * Can we use a vfs layer function for directory iteration?
+ * This code shouldn't need to depend on the concrete file system implemenation
+ */
 static void
 _get_best_file_for_deletion(struct inode *dir, bool recurse,
 			    struct eviction_policy *eviction_policy,
@@ -34,20 +37,27 @@ _get_best_file_for_deletion(struct inode *dir, bool recurse,
 	/* Search for the file in directory */
 	for (i = 0; i < OUICHEFS_MAX_SUBFILES; i++) {
 		f = &dblock->files[i];
-		if (!f->inode) {
+		if (!f->inode)
 			break;
-		}
 
+		/*
+		 * Get inode struct from inode ID
+		 * There seems to be some caching used by ouichefs_iget
+		 */
 		struct inode *inode = ouichefs_iget(sb, f->inode);
+
 		if (inode == NULL) {
 			brelse(bh);
 			return;
 		}
 
+		/* Recurse into subdirectories */
 		if (recurse && S_ISDIR(inode->i_mode)) {
 			_get_best_file_for_deletion(inode, recurse,
 						    eviction_policy, result);
-		} else if (S_ISREG(inode->i_mode)) {
+		}
+		/* Compare the inode with the current best candidate */
+		else if (S_ISREG(inode->i_mode)) {
 			if (result->best_candidate == NULL ||
 			    eviction_policy->compare(
 				    inode, result->best_candidate) > 0) {
@@ -73,7 +83,7 @@ bool eviction_tracker_get_inode_for_eviction(
 
 	_get_best_file_for_deletion(dir, recurse, eviction_policy, result);
 	if (result->best_candidate == NULL) {
-		printk(KERN_INFO "no file found for eviction\n");
+		pr_err("no file found for eviction\n");
 		mutex_unlock(&eviction_tracker_policy_mutex);
 		return false;
 	}
