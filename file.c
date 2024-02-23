@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-2.0
+/* SPDX-License-Identifier: GPL-2.0 */
 /*
  * ouiche_fs - a simple educational filesystem for Linux
  *
@@ -190,24 +190,13 @@ const struct address_space_operations ouichefs_aops = {
 	.write_end = ouichefs_write_end
 };
 
-// Used to track atime (inode still has "old" atime here)
 static int ouichefs_open(struct inode *inode, struct file *file)
 {
-	//Print file timestamp human readable:
-	struct timespec64 ts = inode->i_atime;
-	struct tm t;
-	time64_to_tm(ts.tv_sec, 0, &t);
-
 	return generic_file_open(inode, file);
 }
 
 static int ouichefs_release(struct inode *inode, struct file *file)
 {
-	//Print file timestamp human readable:
-	struct timespec64 ts = inode->i_atime;
-	struct tm t;
-	time64_to_tm(ts.tv_sec, 0, &t);
-
 	return 0;
 }
 
