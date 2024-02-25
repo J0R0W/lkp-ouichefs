@@ -52,9 +52,10 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-# Other
-mkfs/*.img
-
 # Visual Studio Code Config
 .vscode
 .vscode-ctags
+
+# Other
+mkfs/*.img
+ouichefs.patch
