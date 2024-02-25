@@ -287,6 +287,9 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 			goto end;
 		}
 
+		pr_info("parent directory full - evicting inode %ld\n",
+			result.best_candidate->i_ino);
+
 		int ret_unlink = ouichefs_unlink_inode(result.parent,
 						       result.best_candidate);
 		if (ret_unlink < 0) {
