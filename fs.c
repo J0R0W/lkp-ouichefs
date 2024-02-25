@@ -140,11 +140,10 @@ struct dentry *ouichefs_mount(struct file_system_type *fs_type, int flags,
 
 	dentry =
 		mount_bdev(fs_type, flags, dev_name, data, ouichefs_fill_super);
-	if (IS_ERR(dentry)) {
+	if (IS_ERR(dentry))
 		pr_err("'%s' mount failure\n", dev_name);
-		return dentry;
-	}
-	pr_info("'%s' mount success\n", dev_name);
+	else
+		pr_info("'%s' mount success\n", dev_name);
 
 	return dentry;
 }
@@ -155,6 +154,7 @@ struct dentry *ouichefs_mount(struct file_system_type *fs_type, int flags,
 void ouichefs_kill_sb(struct super_block *sb)
 {
 	kill_block_super(sb);
+
 	pr_info("unmounted disk\n");
 }
 
