@@ -187,12 +187,10 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 
 	/* Get a free block for this new inode's index */
 	bno = get_free_block(sb);
-
 	if (!bno) {
 		ret = -ENOSPC;
 		goto put_inode;
 	}
-
 	ci->index_block = bno;
 
 	/* Initialize inode */
@@ -232,7 +230,6 @@ put_ino:
  *   - cleanup index block of the new inode
  *   - add new file/directory in parent index
  */
-
 static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 			   struct dentry *dentry, umode_t mode, bool excl)
 {
