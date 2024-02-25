@@ -100,6 +100,7 @@ Thus we took the given use case example of a "log filesystem" to heart and concl
 From this we concluded that a very simple approach might actually fit the use cases best:
 We simply scan all files (from a starting directory, recursive if necessary) whenever an eviction is necessary.
 For the scanning we iterate over the inodes (and recursing into subdirectories if the inode happens to be a directory).
+
 We are reading the directory-inode contents "manually" by using a struct buffer_head. We don't really like this approach either because we rely on the file system implementation for this (references to struct ouichefs_dir_block for example) and we hope this file-iteration could be replaced by a vfs function. We noticed there is a iterate_dir function that seems to do what we need, but this function requires a struct file as parameter which seemed difficult to get from an inode as start-directory.
 
 ## Additioal Features
@@ -121,3 +122,29 @@ stat->f_files = sbi->nr_inodes - sbi->nr_free_inodes;
 // Correct
 stat->f_files = sbi->nr_inodes;
 ```
+
+## Current Bugs
+
+### Hardlink Deletion
+Hardlinks are currently bugged and if you create 2 hardlinks to the same inode in the same directory, deletion of the hardlinks might cause issues - this issue is documented in more detail in the ouichefs_link function.
+
+### "No space left on device" error
+Running this test script causes "No space left on device" errors which obviously shouldn't occur
+```bash
+#!/bin/bash
+
+directory="/root/ouichefs"
+
+for((j=1; j<= 3; j++))
+do
+    for ((i=1; i<=100; i++))
+    do
+        filename="$directory/file_$i"
+        
+		# Exit script on error
+        dd if=/dev/urandom of="$filename" bs=1M count=1 || exit 1
+    done
+done
+echo "Done!"
+``` 
+The issue seems to occur when overwriting files (it works fine without the outer for loop) - tested on a 50MB partition
