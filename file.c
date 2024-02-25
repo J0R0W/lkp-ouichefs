@@ -189,21 +189,9 @@ const struct address_space_operations ouichefs_aops = {
 	.write_end = ouichefs_write_end
 };
 
-static int ouichefs_open(struct inode *inode, struct file *file)
-{
-	return generic_file_open(inode, file);
-}
-
-static int ouichefs_release(struct inode *inode, struct file *file)
-{
-	return 0;
-}
-
 const struct file_operations ouichefs_file_ops = {
 	.owner = THIS_MODULE,
 	.llseek = generic_file_llseek,
 	.read_iter = generic_file_read_iter,
-	.write_iter = generic_file_write_iter,
-	.open = ouichefs_open,
-	.release = ouichefs_release
+	.write_iter = generic_file_write_iter
 };
