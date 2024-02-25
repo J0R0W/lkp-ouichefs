@@ -43,6 +43,7 @@ _get_best_file_for_deletion(struct inode *dir, bool recurse,
 		/*
 		 * Get inode struct from inode ID
 		 * There seems to be some caching used by ouichefs_iget
+		 * so hopefully the performance impact is not too bad
 		 */
 		struct inode *inode = ouichefs_iget(sb, f->inode);
 
