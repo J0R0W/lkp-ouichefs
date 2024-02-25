@@ -62,7 +62,7 @@ _get_best_file_for_deletion(struct inode *dir, bool recurse,
 		 * ignore file if it is currently open (read or write)
 		 */
 		else if (S_ISREG(inode->i_mode) &&
-			 atomic_read(&inode->i_count) == 1 &&
+			 atomic_read(&inode->i_readcount) == 0 &&
 			 atomic_read(&inode->i_writecount) == 0) {
 			if (result->best_candidate == NULL ||
 			    eviction_policy->compare(
