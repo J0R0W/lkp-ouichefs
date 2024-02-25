@@ -9,6 +9,10 @@
 
 #include <linux/bitmap.h>
 #include "ouichefs.h"
+#include "eviction_tracker.h"
+
+extern int eviction_percentage_threshold;
+extern int ouichefs_unlink_inode(struct inode *dir, struct inode *inode);
 
 /*
  * Return the first free bit (set to 1) in a given in-memory bitmap spanning
@@ -52,9 +56,33 @@ static inline uint32_t get_free_inode(struct ouichefs_sb_info *sbi)
  * Return an unused block number and mark it used.
  * Return 0 if no free block was found.
  */
-static inline uint32_t get_free_block(struct ouichefs_sb_info *sbi)
+static inline uint32_t get_free_block(struct super_block *sb)
 {
+	struct ouichefs_sb_info *sbi = OUICHEFS_SB(sb);
+	struct inode *dir = d_inode(sb->s_root);
 	uint32_t ret;
+
+	while ((sbi->nr_free_blocks * 100) / sbi->nr_blocks <
+	       eviction_percentage_threshold) {
+		struct eviction_tracker_scan_result result;
+
+		if (!eviction_tracker_get_inode_for_eviction(dir, true,
+							     &result)) {
+			return -ENOENT;
+		}
+
+		pr_info("not enough blocks - evicting inode %ld\n",
+			result.best_candidate->i_ino);
+
+		ret = ouichefs_unlink_inode(result.parent,
+					    result.best_candidate);
+
+		if (ret < 0) {
+			pr_err("unlink of inode %ld failed\n",
+			       result.best_candidate->i_ino);
+			return ret;
+		}
+	}
 
 	ret = get_first_free_bit(sbi->bfree_bitmap, sbi->nr_blocks);
 	if (ret) {

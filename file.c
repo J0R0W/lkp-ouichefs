@@ -25,7 +25,6 @@ static int ouichefs_file_get_block(struct inode *inode, sector_t iblock,
 				   struct buffer_head *bh_result, int create)
 {
 	struct super_block *sb = inode->i_sb;
-	struct ouichefs_sb_info *sbi = OUICHEFS_SB(sb);
 	struct ouichefs_inode_info *ci = OUICHEFS_INODE(inode);
 	struct ouichefs_file_index_block *index;
 	struct buffer_head *bh_index;
@@ -50,7 +49,7 @@ static int ouichefs_file_get_block(struct inode *inode, sector_t iblock,
 			ret = 0;
 			goto brelse_index;
 		}
-		bno = get_free_block(sbi);
+		bno = get_free_block(sb);
 		if (!bno) {
 			ret = -ENOSPC;
 			goto brelse_index;

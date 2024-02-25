@@ -21,8 +21,6 @@ static const struct inode_operations ouichefs_symlink_inode_ops;
 
 int ouichefs_unlink_inode(struct inode *dir, struct inode *inode);
 
-extern int eviction_percentage_threshold;
-
 /*
  * Get inode ino from disk.
  */
@@ -173,25 +171,6 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 	sb = dir->i_sb;
 	sbi = OUICHEFS_SB(sb);
 
-	while ((sbi->nr_free_blocks * 100) / sbi->nr_blocks <
-	       eviction_percentage_threshold) {
-		struct eviction_tracker_scan_result result;
-
-		if (!eviction_tracker_get_inode_for_eviction(dir, true,
-							     &result)) {
-			return ERR_PTR(-ENOENT);
-		}
-
-		ret = ouichefs_unlink_inode(result.parent,
-					    result.best_candidate);
-
-		if (ret < 0) {
-			pr_err("unlink of inode %ld failed\n",
-			       result.best_candidate->i_ino);
-			return ERR_PTR(ret);
-		}
-	}
-
 	if (sbi->nr_free_inodes == 0 || sbi->nr_free_blocks == 0)
 		return ERR_PTR(-ENOSPC);
 
@@ -207,7 +186,7 @@ static struct inode *ouichefs_new_inode(struct inode *dir, mode_t mode)
 	ci = OUICHEFS_INODE(inode);
 
 	/* Get a free block for this new inode's index */
-	bno = get_free_block(sbi);
+	bno = get_free_block(sb);
 
 	if (!bno) {
 		ret = -ENOSPC;
