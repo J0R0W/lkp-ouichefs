@@ -10,9 +10,9 @@
 #include <linux/bitmap.h>
 #include "ouichefs.h"
 #include "eviction_tracker.h"
+#include "inode.h"
 
 extern int eviction_percentage_threshold;
-extern int ouichefs_unlink_inode(struct inode *dir, struct inode *inode);
 
 /*
  * Return the first free bit (set to 1) in a given in-memory bitmap spanning

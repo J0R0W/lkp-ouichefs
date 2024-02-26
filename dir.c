@@ -11,6 +11,7 @@
 #include <linux/fs.h>
 #include <linux/buffer_head.h>
 
+#include "dir.h"
 #include "ouichefs.h"
 
 /*

@@ -17,10 +17,10 @@
 #include <linux/moduleparam.h>
 
 #include "ouichefs.h"
+#include "fs.h"
+#include "inode.h"
 #include "eviction_tracker.h"
 
-/* Parameter how many blocks can be free before eviction is triggered (in %) */
-int eviction_percentage_threshold = 10;
 MODULE_PARM_DESC(
 	eviction_percentage_threshold,
 	"Parameter how many blocks can be free before eviction is triggered (in %%) (Default: 10)");
@@ -56,8 +56,6 @@ static const struct kernel_param_ops eviction_percentage_threshold_ops = {
 module_param_cb(eviction_percentage_threshold,
 		&eviction_percentage_threshold_ops,
 		&eviction_percentage_threshold, 0664);
-
-extern int ouichefs_unlink_inode(struct inode *dir, struct inode *inode);
 
 /* TODO: Check if the path is an ouichefs path
  * or belongs to another file system

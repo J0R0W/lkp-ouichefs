@@ -12,14 +12,13 @@
 #include <linux/buffer_head.h>
 #include <linux/slab.h>
 
+#include "inode.h"
 #include "ouichefs.h"
 #include "bitmap.h"
 #include "eviction_tracker.h"
 
 static const struct inode_operations ouichefs_inode_ops;
 static const struct inode_operations ouichefs_symlink_inode_ops;
-
-int ouichefs_unlink_inode(struct inode *dir, struct inode *inode);
 
 /*
  * Get inode ino from disk.
