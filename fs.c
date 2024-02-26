@@ -57,9 +57,6 @@ module_param_cb(eviction_percentage_threshold,
 		&eviction_percentage_threshold_ops,
 		&eviction_percentage_threshold, 0664);
 
-/* TODO: Check if the path is an ouichefs path
- * or belongs to another file system
- */
 static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 					    struct kobj_attribute *attr,
 					    const char *buf, size_t count,
@@ -71,6 +68,13 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 	if (ret < 0) {
 		pr_err("Invalid input: %s\n", buf);
 		return ret;
+	}
+
+	/* Is this really safe to check whether the path is an OUICHEFS mount?*/
+	if (path.mnt->mnt_sb->s_magic != OUICHEFS_MAGIC) {
+		pr_err("Path is not a OUICHEFS mount: %s\n", buf);
+		path_put(&path);
+		return -EINVAL;
 	}
 
 	/* Get inode for eviction */
