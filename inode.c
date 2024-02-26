@@ -271,6 +271,15 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 			ret = ret_unlink;
 			goto end;
 		}
+
+		/* See fs.c for lengthy explanation */
+		struct dentry *leftover_alias;
+		do {
+			leftover_alias = d_find_alias(result.best_candidate);
+			if (leftover_alias) {
+				d_invalidate(leftover_alias);
+			}
+		} while (leftover_alias != NULL);
 	}
 
 	/* Get a new free inode */
@@ -496,6 +505,15 @@ static int ouichefs_rename(struct mnt_idmap *idmap, struct inode *old_dir,
 			ret = ret_unlink;
 			goto relse_new;
 		}
+
+		/* See fs.c for lengthy explanation */
+		struct dentry *leftover_alias;
+		do {
+			leftover_alias = d_find_alias(result.best_candidate);
+			if (leftover_alias) {
+				d_invalidate(leftover_alias);
+			}
+		} while (leftover_alias != NULL);
 	}
 
 	for (i = 0; i < OUICHEFS_MAX_SUBFILES; i++) {
@@ -723,6 +741,15 @@ static int ouichefs_link(struct dentry *old_dentry, struct inode *dir,
 			dput(dentry);
 			return ret_unlink;
 		}
+
+		/* See fs.c for lengthy explanation */
+		struct dentry *leftover_alias;
+		do {
+			leftover_alias = d_find_alias(result.best_candidate);
+			if (leftover_alias) {
+				d_invalidate(leftover_alias);
+			}
+		} while (leftover_alias != NULL);
 	}
 
 	/* Find first free slot in parent index and register new inode */
