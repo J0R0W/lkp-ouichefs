@@ -385,8 +385,7 @@ int ouichefs_unlink_inode(struct inode *dir, struct inode *inode)
 
 	/*
 	 * Only decrement link count if link count is 2 or more (hardlinks)
-	 * because later in this function
-	 * the original decrement code will still run
+	 * and return because no cleanup is necessary
 	 */
 	if (inode->i_nlink > 1) {
 		inode_dec_link_count(inode);
