@@ -737,13 +737,10 @@ static int ouichefs_link(struct dentry *old_dentry, struct inode *dir,
 		}
 
 		/* See fs.c for lengthy explanation */
-		struct dentry *leftover_alias;
-		do {
-			leftover_alias = d_find_alias(result.best_candidate);
-			if (leftover_alias) {
-				d_invalidate(leftover_alias);
-			}
-		} while (leftover_alias != NULL);
+		d_prune_aliases(result.best_candidate);
+
+		iput(result.best_candidate);
+		iput(result.parent);
 	}
 
 	/* Find first free slot in parent index and register new inode */
