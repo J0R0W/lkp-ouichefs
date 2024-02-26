@@ -107,9 +107,9 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 	 * (trigger eviction of file1)
 	 * $ touch file1
 	 * --> file1 won't be created again because it's still in the dcache
-	 * 
+	 *
 	 * This hack is probably rather bad for performance...
-	 * 
+	 *
 	 * Our main issue is this: If we get an inode that we want to evict,
 	 * we could call d_find_alias() to get a dentry for the inode
 	 * 1. Is there only one alias for an inode? If we support hardlinks

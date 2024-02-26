@@ -60,8 +60,8 @@ static bool eviction_tracker_iteration_actor(struct dir_context *ctx,
 			/*
 			 * We found a better (or the first) candidate
 			 * drop previous candidate (and parent) references
-			 * and hold an additional reference to new candidate and parent
-			 * (iput can handle NULL inodes)
+			 * and hold an additional reference to new candidate
+			 * and parent (iput can handle NULL inodes)
 			 */
 			iput(eti_ctx->result->best_candidate);
 			iput(eti_ctx->result->parent);
