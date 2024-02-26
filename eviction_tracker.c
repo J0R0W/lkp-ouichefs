@@ -41,6 +41,7 @@ static bool eviction_tracker_iteration_actor(struct dir_context *ctx,
 	if (eti_ctx->recurse && S_ISDIR(inode->i_mode)) {
 		/* Copy current context, just update parent and reset pos */
 		struct eviction_tracker_iteration_context new_eti_ctx;
+
 		memcpy(&new_eti_ctx, eti_ctx,
 		       sizeof(struct eviction_tracker_iteration_context));
 		new_eti_ctx.ctx.pos = 2;
