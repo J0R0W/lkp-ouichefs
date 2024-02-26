@@ -98,9 +98,9 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 	 * Hacky bugfix: we use inodes to unlink files instead of dentries
 	 * (mostly because we don't really understand
 	 * how to properly use the dcache)
-	 * so we need to check for leftover aliases in the dcache
-	 * and invalidate them after unlinking the inode
-	 * if we used vfs_unlink() instead of ouichefs_unlink_inode() we
+	 * so we need to prune leftover aliases in the dcache
+	 * after unlinking the inode.
+	 * If we used vfs_unlink() instead of ouichefs_unlink_inode() we
 	 * probably wouldn't need to do this
 	 * If we don't do this, something like this will fail:
 	 * $ touch file1
@@ -118,13 +118,7 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 	 * would like a function that forces the dcache to load the inode
 	 * into the cache so we can get the dentry for it.
 	*/
-	struct dentry *leftover_alias;
-	do {
-		leftover_alias = d_find_alias(result.best_candidate);
-		if (leftover_alias) {
-			d_invalidate(leftover_alias);
-		}
-	} while (leftover_alias != NULL);
+	d_prune_aliases(result.best_candidate);
 
 	path_put(&path);
 	return count;

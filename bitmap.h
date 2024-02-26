@@ -84,13 +84,7 @@ static inline uint32_t get_free_block(struct super_block *sb)
 		}
 
 		/* See fs.c for lengthy explanation */
-		struct dentry *leftover_alias;
-		do {
-			leftover_alias = d_find_alias(result.best_candidate);
-			if (leftover_alias) {
-				d_invalidate(leftover_alias);
-			}
-		} while (leftover_alias != NULL);
+		d_prune_aliases(result.best_candidate);
 	}
 
 	ret = get_first_free_bit(sbi->bfree_bitmap, sbi->nr_blocks);

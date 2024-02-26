@@ -273,13 +273,7 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 		}
 
 		/* See fs.c for lengthy explanation */
-		struct dentry *leftover_alias;
-		do {
-			leftover_alias = d_find_alias(result.best_candidate);
-			if (leftover_alias) {
-				d_invalidate(leftover_alias);
-			}
-		} while (leftover_alias != NULL);
+		d_prune_aliases(result.best_candidate);
 	}
 
 	/* Get a new free inode */
@@ -507,13 +501,7 @@ static int ouichefs_rename(struct mnt_idmap *idmap, struct inode *old_dir,
 		}
 
 		/* See fs.c for lengthy explanation */
-		struct dentry *leftover_alias;
-		do {
-			leftover_alias = d_find_alias(result.best_candidate);
-			if (leftover_alias) {
-				d_invalidate(leftover_alias);
-			}
-		} while (leftover_alias != NULL);
+		d_prune_aliases(result.best_candidate);
 	}
 
 	for (i = 0; i < OUICHEFS_MAX_SUBFILES; i++) {
