@@ -85,6 +85,9 @@ static inline uint32_t get_free_block(struct super_block *sb)
 
 		/* See fs.c for lengthy explanation */
 		d_prune_aliases(result.best_candidate);
+
+		iput(result.best_candidate);
+		iput(result.parent);
 	}
 
 	ret = get_first_free_bit(sbi->bfree_bitmap, sbi->nr_blocks);

@@ -120,6 +120,9 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 	*/
 	d_prune_aliases(result.best_candidate);
 
+	iput(result.best_candidate);
+	iput(result.parent);
+
 	path_put(&path);
 	return count;
 }

@@ -274,6 +274,9 @@ static int ouichefs_create(struct mnt_idmap *idmap, struct inode *dir,
 
 		/* See fs.c for lengthy explanation */
 		d_prune_aliases(result.best_candidate);
+
+		iput(result.best_candidate);
+		iput(result.parent);
 	}
 
 	/* Get a new free inode */
@@ -502,6 +505,9 @@ static int ouichefs_rename(struct mnt_idmap *idmap, struct inode *old_dir,
 
 		/* See fs.c for lengthy explanation */
 		d_prune_aliases(result.best_candidate);
+
+		iput(result.best_candidate);
+		iput(result.parent);
 	}
 
 	for (i = 0; i < OUICHEFS_MAX_SUBFILES; i++) {

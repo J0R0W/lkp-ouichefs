@@ -57,7 +57,16 @@ static bool eviction_tracker_iteration_actor(struct dir_context *ctx,
 		if (eti_ctx->result->best_candidate == NULL ||
 		    eviction_policy->compare(
 			    inode, eti_ctx->result->best_candidate) > 0) {
-			/* We found a better (or the first) candidate */
+			/*
+			 * We found a better (or the first) candidate
+			 * drop previous candidate (and parent) references
+			 * and hold an additional reference to new candidate and parent
+			 * (iput can handle NULL inodes)
+			 */
+			iput(eti_ctx->result->best_candidate);
+			iput(eti_ctx->result->parent);
+			ihold(inode);
+			ihold(eti_ctx->parent);
 			eti_ctx->result->best_candidate = inode;
 			eti_ctx->result->parent = eti_ctx->parent;
 		}
