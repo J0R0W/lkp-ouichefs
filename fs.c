@@ -100,8 +100,6 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 
 	/*
 	 * Hacky bugfix: we use inodes to unlink files instead of dentries
-	 * (mostly because we don't really understand
-	 * how to properly use the dcache)
 	 * so we need to prune leftover aliases in the dcache
 	 * after unlinking the inode.
 	 * If we used vfs_unlink() instead of ouichefs_unlink_inode() we
@@ -112,15 +110,8 @@ static ssize_t ouichefs_evict_store_general(struct kobject *kobj,
 	 * $ touch file1
 	 * --> file1 won't be created again because it's still in the dcache
 	 *
-	 * This hack is probably rather bad for performance...
-	 *
-	 * Our main issue is this: If we get an inode that we want to evict,
-	 * we could call d_find_alias() to get a dentry for the inode
-	 * 1. Is there only one alias for an inode? If we support hardlinks
-	 * then probably no. How to make sure that we get the "corret" one?
-	 * 2. Maybe that inode isn't currently present in the dcache? We
-	 * would like a function that forces the dcache to load the inode
-	 * into the cache so we can get the dentry for it.
+	 * This will probably also remove hardlink aliases from dcache and
+	 * thus could hurt performance a little bit when using hardlinks
 	*/
 	d_prune_aliases(result.best_candidate);
 
